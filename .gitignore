@@ -1,0 +1,36 @@
+# Dependencies
+/node_modules
+
+# Build output
+/dist
+
+# Logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Optional cache files
+.cache
+.vite
+
+# Environment variables
+.env
+.env.*  # If you use environment files like .env.development etc.
+
+# Mac system files (optional but recommended)
+.DS_Store
+
+# IDE/editor specific files (optional but useful)
+/.vscode
+.idea
+*.swp
+
+# Tailwind CSS JIT cache
+/.tailwind-cache
+
+# Coverage directory
+/coverage
+
+# Local history for some editors
+.history
