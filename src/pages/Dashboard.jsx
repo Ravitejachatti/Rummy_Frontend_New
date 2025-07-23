@@ -66,19 +66,19 @@ const Dashboard = () => {
   ];
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4 sm:space-y-6 px-2 sm:px-0">
       {/* Welcome Section */}
-      <div className="bg-gradient-to-r from-primary-500 to-primary-600 rounded-xl p-6 text-white">
-        <div className="flex items-center justify-between">
+      <div className="bg-gradient-to-r from-primary-500 to-primary-600 rounded-xl p-4 sm:p-6 text-white">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between space-y-3 sm:space-y-0">
           <div>
-            <h1 className="text-2xl font-bold mb-2">
+            <h1 className="text-xl sm:text-2xl font-bold mb-2">
               Welcome back, {user?.username}! 🎯
             </h1>
-            <p className="text-primary-100">
+            <p className="text-primary-100 text-sm sm:text-base">
               Ready to play some Rummy? Check out the available tables below.
             </p>
           </div>
-          <div className="text-right">
+          <div className="text-left sm:text-right">
             {user?.role === 'admin' && (
               <span className="bg-white bg-opacity-20 px-3 py-1 rounded-full text-sm font-medium">
                 Admin
@@ -89,22 +89,22 @@ const Dashboard = () => {
       </div>
 
       {/* Stats Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-6">
         {stats.map((stat) => {
           const Icon = stat.icon;
           return (
             <div
               key={stat.name}
               onClick={stat.action}
-              className="card hover:shadow-lg transition-shadow cursor-pointer"
+              className="card hover:shadow-lg transition-shadow cursor-pointer p-3 sm:p-6"
             >
-              <div className="flex items-center">
-                <div className={`p-3 rounded-lg ${stat.bgColor}`}>
-                  <Icon className={`h-6 w-6 ${stat.color}`} />
+              <div className="flex flex-col sm:flex-row sm:items-center space-y-2 sm:space-y-0">
+                <div className={`p-2 sm:p-3 rounded-lg ${stat.bgColor} self-start`}>
+                  <Icon className={`h-5 w-5 sm:h-6 sm:w-6 ${stat.color}`} />
                 </div>
-                <div className="ml-4">
-                  <p className="text-sm font-medium text-gray-600">{stat.name}</p>
-                  <p className="text-2xl font-bold text-gray-900">{stat.value}</p>
+                <div className="sm:ml-4">
+                  <p className="text-xs sm:text-sm font-medium text-gray-600">{stat.name}</p>
+                  <p className="text-lg sm:text-2xl font-bold text-gray-900">{stat.value}</p>
                 </div>
               </div>
             </div>
@@ -113,11 +113,11 @@ const Dashboard = () => {
       </div>
 
       {/* Quick Actions */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6">
         {/* Quick Play */}
         <div className="card">
-          <div className="flex items-center justify-between mb-4">
-            <h3 className="text-lg font-semibold text-gray-900">Quick Play</h3>
+          <div className="flex items-center justify-between mb-3 sm:mb-4">
+            <h3 className="text-base sm:text-lg font-semibold text-gray-900">Quick Play</h3>
             <PlayIcon className="h-5 w-5 text-primary-600" />
           </div>
           
@@ -125,28 +125,28 @@ const Dashboard = () => {
             {activeTables.slice(0, 3).map((table) => (
               <div
                 key={table._id}
-                className="flex items-center justify-between p-3 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors cursor-pointer"
+                className="flex flex-col sm:flex-row sm:items-center justify-between p-3 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors cursor-pointer space-y-2 sm:space-y-0"
                 onClick={() => navigate(`/game/${table._id}`)}
               >
                 <div>
-                  <p className="font-medium text-gray-900">{table.name}</p>
-                  <p className="text-sm text-gray-600">
+                  <p className="font-medium text-gray-900 text-sm sm:text-base">{table.name}</p>
+                  <p className="text-xs sm:text-sm text-gray-600">
                     {table.minPlayers}-{table.maxPlayers} players • {table.chipValue} chips
                   </p>
                 </div>
-                <button className="btn-primary btn text-xs px-3 py-1">
+                <button className="btn-primary btn text-xs px-3 py-1 w-full sm:w-auto">
                   Join
                 </button>
               </div>
             ))}
             
             {activeTables.length === 0 && (
-              <div className="text-center py-4">
+              <div className="text-center py-6">
                 <p className="text-gray-500">No active tables available</p>
                 {user?.role === 'admin' && (
                   <button
                     onClick={() => navigate('/tables')}
-                    className="btn-primary mt-2"
+                    className="btn-primary mt-3 w-full sm:w-auto"
                   >
                     Create Table
                   </button>
@@ -157,7 +157,7 @@ const Dashboard = () => {
             {activeTables.length > 3 && (
               <button
                 onClick={() => navigate('/tables')}
-                className="w-full btn-secondary"
+                className="w-full btn-secondary text-sm"
               >
                 View All Tables
               </button>
@@ -167,8 +167,8 @@ const Dashboard = () => {
 
         {/* Top Players */}
         <div className="card">
-          <div className="flex items-center justify-between mb-4">
-            <h3 className="text-lg font-semibold text-gray-900">Top Players</h3>
+          <div className="flex items-center justify-between mb-3 sm:mb-4">
+            <h3 className="text-base sm:text-lg font-semibold text-gray-900">Top Players</h3>
             <TrophyIcon className="h-5 w-5 text-warning-600" />
           </div>
           
@@ -176,7 +176,7 @@ const Dashboard = () => {
             {players.slice(0, 5).map((player, index) => (
               <div key={player.userId} className="flex items-center justify-between">
                 <div className="flex items-center space-x-3">
-                  <div className={`flex items-center justify-center w-8 h-8 rounded-full text-sm font-bold ${
+                  <div className={`flex items-center justify-center w-7 h-7 sm:w-8 sm:h-8 rounded-full text-xs sm:text-sm font-bold ${
                     index === 0 ? 'bg-yellow-100 text-yellow-700' :
                     index === 1 ? 'bg-gray-100 text-gray-700' :
                     index === 2 ? 'bg-amber-100 text-amber-700' :
@@ -185,17 +185,17 @@ const Dashboard = () => {
                     {index + 1}
                   </div>
                   <div>
-                    <p className="font-medium text-gray-900">
+                    <p className="font-medium text-gray-900 text-sm sm:text-base">
                       {player.username}
                       {player.userId === user?.id && (
-                        <span className="ml-2 text-xs text-primary-600">(You)</span>
+                        <span className="ml-1 sm:ml-2 text-xs text-primary-600">(You)</span>
                       )}
                     </p>
-                    <p className="text-sm text-gray-600">{player.totalWins} wins</p>
+                    <p className="text-xs sm:text-sm text-gray-600">{player.totalWins} wins</p>
                   </div>
                 </div>
                 <div className="text-right">
-                  <p className="font-semibold text-gray-900">
+                  <p className="font-semibold text-gray-900 text-sm sm:text-base">
                     {player.totalPoints?.toLocaleString()}
                   </p>
                   <p className="text-xs text-gray-500">points</p>
@@ -204,14 +204,14 @@ const Dashboard = () => {
             ))}
             
             {players.length === 0 && (
-              <div className="text-center py-4">
+              <div className="text-center py-6">
                 <p className="text-gray-500">No rankings yet</p>
               </div>
             )}
             
             <button
               onClick={() => navigate('/leaderboard')}
-              className="w-full btn-secondary"
+              className="w-full btn-secondary text-sm"
             >
               View Full Leaderboard
             </button>
@@ -221,8 +221,8 @@ const Dashboard = () => {
 
       {/* Recent Activity */}
       <div className="card">
-        <div className="flex items-center justify-between mb-4">
-          <h3 className="text-lg font-semibold text-gray-900">Recent Activity</h3>
+        <div className="flex items-center justify-between mb-3 sm:mb-4">
+          <h3 className="text-base sm:text-lg font-semibold text-gray-900">Recent Activity</h3>
           <ChartBarIcon className="h-5 w-5 text-gray-600" />
         </div>
         
@@ -232,12 +232,12 @@ const Dashboard = () => {
               <FireIcon className="h-4 w-4 text-success-600" />
             </div>
             <div>
-              <p className="font-medium text-gray-900">Welcome to Rummy Pro!</p>
-              <p className="text-sm text-gray-600">Start playing to see your activity here</p>
+              <p className="font-medium text-gray-900 text-sm sm:text-base">Welcome to Rummy Pro!</p>
+              <p className="text-xs sm:text-sm text-gray-600">Start playing to see your activity here</p>
             </div>
           </div>
           
-          <div className="text-center py-4">
+          <div className="text-center py-6">
             <p className="text-sm text-gray-500">
               Your game history and achievements will appear here
             </p>

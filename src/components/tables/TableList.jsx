@@ -62,18 +62,18 @@ const TableList = () => {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4 sm:space-y-6 px-2 sm:px-0">
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between space-y-3 sm:space-y-0">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Game Tables</h1>
-          <p className="text-gray-600">Choose a table to start playing</p>
+          <h1 className="text-xl sm:text-2xl font-bold text-gray-900">Game Tables</h1>
+          <p className="text-gray-600 text-sm sm:text-base">Choose a table to start playing</p>
         </div>
         
         {user?.role === 'admin' && (
           <button
             onClick={() => setShowCreateModal(true)}
-            className="btn-primary"
+            className="btn-primary w-full sm:w-auto"
           >
             <PlusIcon className="h-5 w-5 mr-2" />
             Create Table
@@ -84,11 +84,11 @@ const TableList = () => {
       <ErrorMessage message={error} onRetry={() => dispatch(fetchTables())} />
 
       {/* Tables Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">
         {tables.map((table) => (
-          <div key={table._id} className="card hover:shadow-lg transition-shadow">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="text-lg font-semibold text-gray-900">{table.name}</h3>
+          <div key={table._id} className="card hover:shadow-lg transition-shadow p-4 sm:p-6">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-3 sm:mb-4 space-y-2 sm:space-y-0">
+              <h3 className="text-base sm:text-lg font-semibold text-gray-900">{table.name}</h3>
               <span className={`px-2 py-1 rounded-full text-xs font-medium ${
                 table.isActive ? 'bg-success-100 text-success-700' : 'bg-gray-100 text-gray-700'
               }`}>
@@ -96,18 +96,18 @@ const TableList = () => {
               </span>
             </div>
             
-            <div className="space-y-3 mb-4">
-              <div className="flex items-center text-sm text-gray-600">
+            <div className="space-y-2 sm:space-y-3 mb-4">
+              <div className="flex items-center text-xs sm:text-sm text-gray-600">
                 <CurrencyDollarIcon className="h-4 w-4 mr-2" />
                 <span>Entry: {table.chipValue} chips</span>
               </div>
               
-              <div className="flex items-center text-sm text-gray-600">
+              <div className="flex items-center text-xs sm:text-sm text-gray-600">
                 <UsersIcon className="h-4 w-4 mr-2" />
                 <span>{table.minPlayers}-{table.maxPlayers} players</span>
               </div>
               
-              <div className="flex items-center text-sm text-gray-600">
+              <div className="flex items-center text-xs sm:text-sm text-gray-600">
                 <CurrencyDollarIcon className="h-4 w-4 mr-2" />
                 <span>Bank Range: {table.bankRange}</span>
               </div>
@@ -120,7 +120,7 @@ const TableList = () => {
                 table.isActive && canJoinTable(table)
                   ? 'btn-primary'
                   : 'btn-secondary opacity-50 cursor-not-allowed'
-              }`}
+              } text-sm`}
             >
               <PlayIcon className="h-4 w-4 mr-2" />
               {!canJoinTable(table) ? 'Insufficient Chips' : 'Join Table'}
@@ -130,10 +130,10 @@ const TableList = () => {
       </div>
 
       {tables.length === 0 && !loading && (
-        <div className="text-center py-12">
+        <div className="text-center py-12 px-4">
           <UsersIcon className="mx-auto h-12 w-12 text-gray-400" />
-          <h3 className="mt-2 text-sm font-medium text-gray-900">No tables available</h3>
-          <p className="mt-1 text-sm text-gray-500">
+          <h3 className="mt-2 text-sm sm:text-base font-medium text-gray-900">No tables available</h3>
+          <p className="mt-1 text-xs sm:text-sm text-gray-500">
             {user?.role === 'admin' ? 'Create the first table to get started.' : 'Check back later for available tables.'}
           </p>
         </div>
@@ -141,28 +141,28 @@ const TableList = () => {
 
       {/* Create Table Modal */}
       {showCreateModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg p-6 max-w-md w-full mx-4">
-            <h3 className="text-lg font-bold mb-4">Create New Table</h3>
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg p-4 sm:p-6 max-w-md w-full max-h-[90vh] overflow-y-auto">
+            <h3 className="text-base sm:text-lg font-bold mb-3 sm:mb-4">Create New Table</h3>
             
             <form onSubmit={handleCreateTable} className="space-y-4">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
+                <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-1">
                   Table Name
                 </label>
                 <input
                   type="text"
                   required
-                  className="input"
+                  className="input text-sm"
                   value={newTable.name}
                   onChange={(e) => setNewTable({ ...newTable, name: e.target.value })}
                   placeholder="Enter table name"
                 />
               </div>
               
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                  <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-1">
                     Min Players
                   </label>
                   <input
@@ -170,14 +170,14 @@ const TableList = () => {
                     min="2"
                     max="6"
                     required
-                    className="input"
+                    className="input text-sm"
                     value={newTable.minPlayers}
                     onChange={(e) => setNewTable({ ...newTable, minPlayers: parseInt(e.target.value) })}
                   />
                 </div>
                 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                  <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-1">
                     Max Players
                   </label>
                   <input
@@ -185,7 +185,7 @@ const TableList = () => {
                     min="2"
                     max="6"
                     required
-                    className="input"
+                    className="input text-sm"
                     value={newTable.maxPlayers}
                     onChange={(e) => setNewTable({ ...newTable, maxPlayers: parseInt(e.target.value) })}
                   />
@@ -193,38 +193,38 @@ const TableList = () => {
               </div>
               
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
+                <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-1">
                   Entry Fee (Chips)
                 </label>
                 <input
                   type="number"
                   min="1"
                   required
-                  className="input"
+                  className="input text-sm"
                   value={newTable.chipValue}
                   onChange={(e) => setNewTable({ ...newTable, chipValue: parseInt(e.target.value) })}
                 />
               </div>
               
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
+                <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-1">
                   Bank Range
                 </label>
                 <input
                   type="number"
                   min="10"
                   required
-                  className="input"
+                  className="input text-sm"
                   value={newTable.bankRange}
                   onChange={(e) => setNewTable({ ...newTable, bankRange: parseInt(e.target.value) })}
                 />
               </div>
               
-              <div className="flex space-x-3 pt-4">
+              <div className="flex flex-col sm:flex-row space-y-2 sm:space-y-0 sm:space-x-3 pt-4">
                 <button
                   type="submit"
                   disabled={createLoading}
-                  className="btn-primary flex-1"
+                  className="btn-primary flex-1 text-sm"
                 >
                   {createLoading ? (
                     <div className="flex items-center justify-center">
@@ -238,7 +238,7 @@ const TableList = () => {
                 <button
                   type="button"
                   onClick={() => setShowCreateModal(false)}
-                  className="btn-secondary flex-1"
+                  className="btn-secondary flex-1 text-sm"
                 >
                   Cancel
                 </button>

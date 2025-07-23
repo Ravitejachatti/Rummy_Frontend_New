@@ -62,10 +62,18 @@
     @apply border-primary-500 bg-primary-50 transform -translate-y-2;
   }
   
+  .playing-card.selected {
+    @apply border-primary-500 bg-primary-50;
+  }
+  
+  @media (min-width: 640px) {
+    .playing-card.selected {
+      @apply transform -translate-y-2;
+    }
+  }
+  
   .game-table {
     @apply relative bg-green-800 rounded-full mx-auto;
-    width: 600px;
-    height: 400px;
   }
   
   .player-position {
@@ -90,5 +98,46 @@
   
   .notification.info {
     @apply border-primary-200 bg-primary-50;
+  }
+  
+  /* Mobile-specific improvements */
+  @media (max-width: 640px) {
+    .card {
+      @apply p-4;
+    }
+    
+    .btn {
+      @apply py-3 px-4 text-sm;
+    }
+    
+    .input {
+      @apply py-3 text-base; /* Prevent zoom on iOS */
+    }
+    
+    /* Improve touch targets */
+    .playing-card {
+      @apply min-w-[2.5rem] min-h-[3.5rem];
+    }
+    
+    /* Better modal spacing on mobile */
+    .fixed.inset-0 {
+      @apply p-4;
+    }
+  }
+  
+  /* Smooth transitions for mobile interactions */
+  .card, .btn, .playing-card {
+    @apply transition-all duration-200 ease-in-out;
+  }
+  
+  /* Improve scrolling on mobile */
+  @media (max-width: 640px) {
+    body {
+      @apply overflow-x-hidden;
+    }
+    
+    .overflow-x-auto {
+      -webkit-overflow-scrolling: touch;
+    }
   }
 }
