@@ -46,7 +46,7 @@ const TableList = () => {
   };
 
   const handleJoinTable = (tableId) => {
-    navigate(`/game/${tableId}`);
+    navigate(`/lobby/${tableId}`);
   };
 
   const canJoinTable = (table) => {

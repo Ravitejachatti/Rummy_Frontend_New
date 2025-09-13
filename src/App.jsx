@@ -1,9 +1,10 @@
 // client/src/App.jsx
-import './index.css'; // Ensure this is imported to apply Tailwind styles
+import './index.css';
 import React, { useEffect } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { useSelector, useDispatch } from 'react-redux';
 import socketService from './config/socket';
+import Lobby from './pages/Lobby';
 
 // Components
 import Layout from './components/common/Layout';
@@ -22,7 +23,6 @@ const ProtectedRoute = ({ children }) => {
   const { isAuthenticated } = useSelector((state) => state.auth);
   return isAuthenticated ? children : <Navigate to="/login" />;
 };
-
 const PublicRoute = ({ children }) => {
   const { isAuthenticated } = useSelector((state) => state.auth);
   return !isAuthenticated ? children : <Navigate to="/dashboard" />;
@@ -33,22 +33,17 @@ const NotificationContainer = () => {
   const { notifications } = useSelector((state) => state.game);
 
   useEffect(() => {
-    notifications.forEach((notification) => {
-      const timer = setTimeout(() => {
-        dispatch(removeNotification(notification.id));
-      }, 5000);
-
-      return () => clearTimeout(timer);
-    });
+    if (!notifications.length) return;
+    const timers = notifications.map(n =>
+      setTimeout(() => dispatch(removeNotification(n.id)), 5000)
+    );
+    return () => timers.forEach(clearTimeout);
   }, [notifications, dispatch]);
 
   return (
     <div className="fixed top-4 right-4 z-50 space-y-2">
       {notifications.map((notification) => (
-        <div
-          key={notification.id}
-          className={`notification ${notification.type}`}
-        >
+        <div key={notification.id} className={`notification ${notification.type}`}>
           <div className="flex items-start justify-between">
             <p className="text-sm font-medium">{notification.message}</p>
             <button
@@ -65,17 +60,13 @@ const NotificationContainer = () => {
 };
 
 function App() {
-  const dispatch = useDispatch();
   const { isAuthenticated, token } = useSelector((state) => state.auth);
 
   useEffect(() => {
-    // Connect socket if user is authenticated
     if (isAuthenticated && token) {
       socketService.connect(token);
     }
-
     return () => {
-      // Cleanup socket connection on unmount
       socketService.disconnect();
     };
   }, [isAuthenticated, token]);
@@ -84,7 +75,7 @@ function App() {
     <Router>
       <div className="App">
         <NotificationContainer />
-        
+
         <Routes>
           {/* Public Routes */}
           <Route
@@ -115,6 +106,17 @@ function App() {
               </ProtectedRoute>
             }
           />
+           <Route
+          path="/lobby/:tableId"
+           element={
+             <ProtectedRoute>
+               <Layout>
+                 {/** Lazy import if you want; for now direct import is fine */}
+                 <Lobby />
+               </Layout>
+             </ProtectedRoute>
+           }
+         />
           <Route
             path="/tables"
             element={

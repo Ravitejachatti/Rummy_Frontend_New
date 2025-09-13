@@ -1,13 +1,23 @@
+// client/src/store/slices/gameSlice.js
 import { createSlice, createAsyncThunk } from '@reduxjs/toolkit';
 import api from '../../config/api';
 import socketService from '../../config/socket';
 
-// Async thunks
+// Helper to read token from state (fallback to localStorage)
+const pickToken = (getState) => {
+  const s = getState();
+  return s?.auth?.token || localStorage.getItem('token') || '';
+};
+
+// Async thunks (attach Authorization header explicitly)
 export const getGameState = createAsyncThunk(
   'game/getGameState',
-  async (tableId, { rejectWithValue }) => {
+  async (tableId, { rejectWithValue, getState }) => {
     try {
-      const response = await api.get(`/api/rummy/game/${tableId}`);
+      const token = pickToken(getState);
+      const response = await api.get(`/api/rummy/game/${tableId}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
       return response.data;
     } catch (error) {
       return rejectWithValue(error.response?.data?.error || 'Failed to get game state');
@@ -17,9 +27,14 @@ export const getGameState = createAsyncThunk(
 
 export const declareWin = createAsyncThunk(
   'game/declareWin',
-  async ({ playerId, gameId, sets }, { rejectWithValue }) => {
+  async ({ playerId, gameId, sets }, { rejectWithValue, getState }) => {
     try {
-      const response = await api.post('/api/rummy/game/declare', { playerId, gameId, sets });
+      const token = pickToken(getState);
+      const response = await api.post(
+        '/api/rummy/game/declare',
+        { playerId, gameId, sets },
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
       return response.data;
     } catch (error) {
       return rejectWithValue(error.response?.data?.error || 'Failed to declare win');
@@ -27,25 +42,21 @@ export const declareWin = createAsyncThunk(
   }
 );
 
-// Socket actions
-export const joinTable = (tableId, playerId) => {
-  socketService.emit('rummy/join_table', { tableId, playerId });
+// Socket actions (do NOT pass token here; socket handshake already has it from socketService.connect(token))
+export const joinTable = (tableId) => {
+  socketService.emit('rummy/join_table', { tableId });
 };
-
-export const drawCard = (gameId, playerId, source) => {
-  socketService.emit('rummy/draw_card', { gameId, playerId, source });
+export const drawCard = (gameId, _playerId, source) => {
+  socketService.emit('rummy/draw_card', { gameId, source }); // source: 'drawPile' | 'discard'
 };
-
-export const discardCard = (gameId, playerId, card) => {
-  socketService.emit('rummy/discard_card', { gameId, playerId, card });
+export const discardCard = (gameId, _playerId, card) => {
+  socketService.emit('rummy/discard_card', { gameId, card });
 };
-
-export const dropGame = (gameId, playerId) => {
-  socketService.emit('rummy/drop', { gameId, playerId });
+export const dropGame = (gameId, _playerId) => {
+  socketService.emit('rummy/drop', { gameId });
 };
-
-export const declareWinSocket = (gameId, playerId, sets) => {
-  socketService.emit('rummy/declare_win', { gameId, playerId, sets });
+export const declareWinSocket = (gameId, _playerId, sets) => {
+  socketService.emit('rummy/declare_win', { gameId, sets });
 };
 
 const initialState = {
@@ -78,12 +89,11 @@ const gameSlice = createSlice({
     },
     setCurrentTurn: (state, action) => {
       state.currentTurn = action.payload;
-      // Check if it's current user's turn
       const currentUser = JSON.parse(localStorage.getItem('user'));
-      state.isMyTurn = currentUser && action.payload === currentUser.id;
+      state.isMyTurn = !!(currentUser && String(action.payload) === String(currentUser.id));
     },
     setMyCards: (state, action) => {
-      state.myCards = action.payload;
+      state.myCards = action.payload || [];
     },
     addCardToHand: (state, action) => {
       state.myCards.push(action.payload);
@@ -107,14 +117,10 @@ const gameSlice = createSlice({
     },
     toggleCardSelection: (state, action) => {
       const card = action.payload;
-      const cardKey = `${card.suit}-${card.rank}`;
-      const index = state.selectedCards.findIndex(c => `${c.suit}-${c.rank}` === cardKey);
-      
-      if (index !== -1) {
-        state.selectedCards.splice(index, 1);
-      } else {
-        state.selectedCards.push(card);
-      }
+      const key = `${card.suit}-${card.rank}`;
+      const index = state.selectedCards.findIndex(c => `${c.suit}-${c.rank}` === key);
+      if (index !== -1) state.selectedCards.splice(index, 1);
+      else state.selectedCards.push(card);
     },
     clearSelectedCards: (state) => {
       state.selectedCards = [];
@@ -161,17 +167,15 @@ const gameSlice = createSlice({
         state.currentGame = action.payload;
         state.players = action.payload.players || [];
         state.currentTurn = action.payload.currentTurn;
-        state.discardPile = action.payload.discardPile || [];
+        // backend exposes only discardTop; seed local pile
+        state.discardPile = [];
+        if (action.payload.discardTop) state.discardPile.push(action.payload.discardTop);
         state.gameStatus = action.payload.status;
-        
-        // Set user's cards
+
+        // myCards are never returned via REST; rely on rummy/your_hand events
         const currentUser = JSON.parse(localStorage.getItem('user'));
         if (currentUser) {
-          const playerData = action.payload.players?.find(p => p.playerId === currentUser.id);
-          if (playerData) {
-            state.myCards = playerData.hand || [];
-          }
-          state.isMyTurn = action.payload.currentTurn === currentUser.id;
+          state.isMyTurn = String(action.payload.currentTurn) === String(currentUser.id);
         }
       })
       .addCase(getGameState.rejected, (state, action) => {
@@ -183,7 +187,7 @@ const gameSlice = createSlice({
         state.loading = true;
         state.error = null;
       })
-      .addCase(declareWin.fulfilled, (state, action) => {
+      .addCase(declareWin.fulfilled, (state) => {
         state.loading = false;
         state.gameStatus = 'ended';
       })

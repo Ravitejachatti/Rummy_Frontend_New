@@ -126,7 +126,7 @@ const Dashboard = () => {
               <div
                 key={table._id}
                 className="flex flex-col sm:flex-row sm:items-center justify-between p-3 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors cursor-pointer space-y-2 sm:space-y-0"
-                onClick={() => navigate(`/game/${table._id}`)}
+                 onClick={() => navigate(`/lobby/${table._id}`)}
               >
                 <div>
                   <p className="font-medium text-gray-900 text-sm sm:text-base">{table.name}</p>

@@ -1,3 +1,4 @@
+// client/src/components/game/GameTable.jsx
 import React, { useEffect, useState } from 'react';
 import { useSelector, useDispatch } from 'react-redux';
 import { useParams } from 'react-router-dom';
@@ -6,8 +7,7 @@ import {
   setGameState,
   setPlayers,
   setCurrentTurn,
-  addCardToHand,
-  removeCardFromHand,
+  setMyCards,
   addToDiscardPile,
   setGameStatus,
   addNotification,
@@ -47,45 +47,47 @@ const GameTable = () => {
 
   useEffect(() => {
     if (tableId && user) {
-      // Join table
-      joinTable(tableId, user.id);
-      
-      // Get initial game state
+      // Join table (server identifies player from JWT)
+      // joinTable(tableId);
+
+      // Initial masked state
       dispatch(getGameState(tableId));
 
-      // Set up socket listeners
+      // Socket listeners
       const socket = socketService.getSocket();
       if (socket) {
-        socket.on('rummy/player_joined', (data) => {
-          dispatch(addNotification({
-            type: 'info',
-            message: `Player joined the table`,
-          }));
+        // Presence
+        socket.on('rummy/player_connected', () => {
+          dispatch(addNotification({ type: 'info', message: 'Player connected' }));
+        });
+        socket.on('rummy/player_disconnected', () => {
+          dispatch(addNotification({ type: 'warning', message: 'Player disconnected' }));
+        });
+
+        // Masked state on join/rejoin
+        socket.on('rummy/state', (s) => {
+          if (s?.players) dispatch(setPlayers(s.players));
+          if (typeof s?.currentTurn !== 'undefined') dispatch(setCurrentTurn(s.currentTurn));
+          if (s?.discardTop) dispatch(addToDiscardPile(s.discardTop));
         });
 
         socket.on('rummy/game_started', (data) => {
           dispatch(setGameState(data));
           dispatch(setGameStatus('playing'));
-          dispatch(addNotification({
-            type: 'success',
-            message: 'Game started! Good luck!',
-          }));
+          dispatch(addNotification({ type: 'success', message: 'Game started! Good luck!' }));
         });
 
-        socket.on('rummy/card_drawn', (data) => {
-          if (data.playerId === user.id) {
-            dispatch(addCardToHand(data.card));
-          }
-          dispatch(addNotification({
-            type: 'info',
-            message: `Player drew a card`,
-          }));
+        // Private hand updates (authoritative)
+        socket.on('rummy/your_hand', ({ hand }) => {
+          dispatch(setMyCards(hand || []));
+        });
+
+        socket.on('rummy/card_drawn', () => {
+          // card is hidden; rely on rummy/your_hand for your hand
+          dispatch(addNotification({ type: 'info', message: 'Player drew a card' }));
         });
 
         socket.on('rummy/card_discarded', (data) => {
-          if (data.playerId === user.id) {
-            dispatch(removeCardFromHand(data.card));
-          }
           dispatch(addToDiscardPile(data.card));
         });
 
@@ -93,48 +95,42 @@ const GameTable = () => {
           dispatch(setCurrentTurn(data.nextPlayerId));
         });
 
-        socket.on('rummy/player_dropped', (data) => {
-          dispatch(addNotification({
-            type: 'warning',
-            message: `Player dropped from the game`,
-          }));
+        socket.on('rummy/player_dropped', () => {
+          dispatch(addNotification({ type: 'warning', message: 'Player dropped from the game' }));
         });
 
         socket.on('rummy/auto_win', (data) => {
           dispatch(setGameStatus('ended'));
           dispatch(addNotification({
-            type: 'success',
-            message: data.winner === user.id ? 'You won by auto-win!' : 'Game ended - auto win',
+            type: data.winner?.toString() === user.id ? 'success' : 'info',
+            message: data.winner?.toString() === user.id ? 'You won by auto-win!' : 'Game ended - auto win',
           }));
         });
 
         socket.on('rummy/win_declared', (data) => {
           dispatch(setGameStatus('ended'));
           dispatch(addNotification({
-            type: data.winner === user.id ? 'success' : 'info',
-            message: data.winner === user.id ? 'Congratulations! You won!' : 'Game ended',
+            type: data.winner.toString() === user.id ? 'success' : 'info',
+            message: data.winner.toString() === user.id ? 'Congratulations! You won!' : 'Game ended',
           }));
         });
 
-        socket.on('rummy/invalid_declaration', (data) => {
-          dispatch(addNotification({
-            type: 'error',
-            message: 'Invalid declaration! Please check your sets.',
-          }));
+        socket.on('rummy/invalid_declaration', () => {
+          dispatch(addNotification({ type: 'error', message: 'Invalid declaration! Please check your sets.' }));
         });
 
         socket.on('rummy/error', (message) => {
-          dispatch(addNotification({
-            type: 'error',
-            message,
-          }));
+          dispatch(addNotification({ type: 'error', message }));
         });
       }
 
       return () => {
         if (socket) {
-          socket.off('rummy/player_joined');
+          socket.off('rummy/player_connected');
+          socket.off('rummy/player_disconnected');
+          socket.off('rummy/state');
           socket.off('rummy/game_started');
+          socket.off('rummy/your_hand');
           socket.off('rummy/card_drawn');
           socket.off('rummy/card_discarded');
           socket.off('rummy/next_turn');
@@ -150,7 +146,9 @@ const GameTable = () => {
 
   const handleDrawCard = (source) => {
     if (!isMyTurn || !currentGame) return;
-    drawCard(currentGame.gameId, user.id, source);
+    // Map 'discardPile' clicks to server 'discard' source
+    const mapped = source === 'discardPile' ? 'discard' : source;
+    drawCard(currentGame.gameId, user.id, mapped);
   };
 
   const handleDiscardCard = () => {
@@ -177,7 +175,6 @@ const GameTable = () => {
       </div>
     );
   }
-
   if (error) {
     return (
       <div className="flex items-center justify-center min-h-screen">
@@ -199,21 +196,19 @@ const GameTable = () => {
                 {currentTurn && (
                   <>
                     {' | '}
-                    Current Turn: <span className="font-medium">
-                      {currentTurn === user.id ? 'Your turn' : 'Waiting...'}
+                    Current Turn:{' '}
+                    <span className="font-medium">
+                      {String(currentTurn) === String(user.id) ? 'Your turn' : 'Waiting...'}
                     </span>
                   </>
                 )}
               </p>
             </div>
-            
+
             <div className="flex flex-col sm:flex-row space-y-2 sm:space-y-0 sm:space-x-2">
               {gameStatus === 'playing' && (
                 <>
-                  <button
-                    onClick={handleDrop}
-                    className="btn-danger text-sm px-3 py-2"
-                  >
+                  <button onClick={handleDrop} className="btn-danger text-sm px-3 py-2">
                     Drop
                   </button>
                   <button
@@ -230,11 +225,14 @@ const GameTable = () => {
         </div>
 
         {/* Game Table */}
-        <div className="game-table relative mx-auto" style={{ 
-          width: 'min(90vw, 600px)', 
-          height: 'min(60vw, 400px)',
-          minHeight: '300px'
-        }}>
+        <div
+          className="game-table relative mx-auto"
+          style={{
+            width: 'min(90vw, 600px)',
+            height: 'min(60vw, 400px)',
+            minHeight: '300px',
+          }}
+        >
           {/* Draw and Discard Piles */}
           <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 flex space-x-4 sm:space-x-8">
             {/* Draw Pile */}
@@ -253,7 +251,7 @@ const GameTable = () => {
             {/* Discard Pile */}
             <div className="text-center">
               <div
-                onClick={() => handleDrawCard('discardPile')}
+                onClick={() => handleDrawCard('discard')}
                 className={`playing-card w-12 h-16 sm:w-16 sm:h-24 ${
                   isMyTurn ? 'cursor-pointer hover:shadow-lg' : 'cursor-not-allowed opacity-50'
                 }`}
@@ -268,10 +266,10 @@ const GameTable = () => {
             </div>
           </div>
 
-          {/* Players */}
+          {/* Players around the table */}
           {players.map((player, index) => {
-            const isCurrentPlayer = player.playerId === user.id;
-            const angle = (index * 360) / players.length;
+            const isCurrentPlayer = String(player.playerId) === String(user.id);
+            const angle = (index * 360) / Math.max(players.length, 1);
             const radius = Math.min(150, window.innerWidth * 0.25);
             const x = Math.cos((angle * Math.PI) / 180) * radius;
             const y = Math.sin((angle * Math.PI) / 180) * radius;
@@ -286,19 +284,19 @@ const GameTable = () => {
                   transform: 'translate(-50%, -50%)',
                 }}
               >
-                <div className={`bg-white rounded-lg p-2 sm:p-3 shadow-lg ${
-                  currentTurn === player.playerId ? 'ring-2 ring-yellow-400' : ''
-                }`}>
+                <div
+                  className={`bg-white rounded-lg p-2 sm:p-3 shadow-lg ${
+                    String(currentTurn) === String(player.playerId) ? 'ring-2 ring-yellow-400' : ''
+                  }`}
+                >
                   <div className="text-center">
                     <p className="font-medium text-gray-900 text-xs sm:text-sm">
-                      {isCurrentPlayer ? 'You' : `Player ${index + 1}`}
+                      {isCurrentPlayer ? 'You' : player.username || `Player ${index + 1}`}
                     </p>
                     <p className="text-xs sm:text-sm text-gray-600">
-                      Cards: {isCurrentPlayer ? myCards.length : player.hand?.length || 0}
+                      Cards: {isCurrentPlayer ? myCards.length : player.handCount ?? 0}
                     </p>
-                    <p className="text-xs text-gray-500 capitalize">
-                      {player.status}
-                    </p>
+                    <p className="text-xs text-gray-500 capitalize">{player.status}</p>
                   </div>
                 </div>
               </div>
@@ -315,13 +313,10 @@ const GameTable = () => {
               onCardSelect={(card) => dispatch(toggleCardSelection(card))}
               isMyTurn={isMyTurn}
             />
-            
+
             {selectedCards.length === 1 && isMyTurn && (
               <div className="text-center mt-3 sm:mt-4">
-                <button
-                  onClick={handleDiscardCard}
-                  className="btn-primary w-full sm:w-auto"
-                >
+                <button onClick={handleDiscardCard} className="btn-primary w-full sm:w-auto">
                   Discard Selected Card
                 </button>
               </div>
@@ -338,16 +333,10 @@ const GameTable = () => {
                 Are you sure you want to declare? Make sure you have valid sets and sequences.
               </p>
               <div className="flex flex-col sm:flex-row space-y-2 sm:space-y-0 sm:space-x-3">
-                <button
-                  onClick={handleDeclareWin}
-                  className="btn-success flex-1 text-sm"
-                >
+                <button onClick={handleDeclareWin} className="btn-success flex-1 text-sm">
                   Declare Win
                 </button>
-                <button
-                  onClick={() => setShowDeclareModal(false)}
-                  className="btn-secondary flex-1 text-sm"
-                >
+                <button onClick={() => setShowDeclareModal(false)} className="btn-secondary flex-1 text-sm">
                   Cancel
                 </button>
               </div>
