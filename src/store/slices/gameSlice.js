@@ -44,6 +44,7 @@ export const declareWin = createAsyncThunk(
 
 // Socket actions (do NOT pass token here; socket handshake already has it from socketService.connect(token))
 export const joinTable = (tableId) => {
+  console.log(tableId)
   socketService.emit('rummy/join_table', { tableId });
 };
 export const drawCard = (gameId, _playerId, source) => {
@@ -51,6 +52,9 @@ export const drawCard = (gameId, _playerId, source) => {
 };
 export const discardCard = (gameId, _playerId, card) => {
   socketService.emit('rummy/discard_card', { gameId, card });
+};
+export const reorderCards = (gameId, playerId, newOrder) => {
+  socketService.emit('rummy/update_order', { gameId, playerId, newOrder });
 };
 export const dropGame = (gameId, _playerId) => {
   socketService.emit('rummy/drop', { gameId });
@@ -153,6 +157,9 @@ const gameSlice = createSlice({
       state.isMyTurn = false;
       state.error = null;
     },
+    reorderMyCards: (state, action) => {
+    state.myCards = action.payload || [];
+  },
   },
   extraReducers: (builder) => {
     builder
@@ -166,7 +173,7 @@ const gameSlice = createSlice({
         state.gameState = action.payload;
         state.currentGame = action.payload;
         state.players = action.payload.players || [];
-        state.currentTurn = action.payload.currentTurn;
+        state.currentTurn = action.payload.currentTurn; 
         // backend exposes only discardTop; seed local pile
         state.discardPile = [];
         if (action.payload.discardTop) state.discardPile.push(action.payload.discardTop);
@@ -215,6 +222,7 @@ export const {
   removeNotification,
   clearError,
   resetGame,
+  reorderMyCards,
 } = gameSlice.actions;
 
 export default gameSlice.reducer;

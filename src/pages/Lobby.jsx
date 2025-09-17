@@ -4,7 +4,7 @@ import { useDispatch, useSelector } from 'react-redux';
 import { useNavigate, useParams, Link } from 'react-router-dom';
 import socketService from '../config/socket';
 import { fetchTables } from '../store/slices/tableSlice';
-import { getGameState, joinTable, setPlayers, setCurrentTurn, addNotification } from '../store/slices/gameSlice';
+import { getGameState, joinTable, setPlayers, setCurrentTurn, addNotification, setGameStatus } from '../store/slices/gameSlice';
 import LoadingSpinner from '../components/common/LoadingSpinner';
 import ErrorMessage from '../components/common/ErrorMessage';
 
@@ -60,7 +60,8 @@ export default function Lobby() {
     const onState = (s) => {
       if (Array.isArray(s?.players)) dispatch(setPlayers(s.players));
       if (typeof s?.currentTurn !== 'undefined') dispatch(setCurrentTurn(s.currentTurn));
-        if (s?.status === 'playing') {
+      if (s?.status) dispatch(setGameStatus(s.status)); // ✅ sync lobby status
+      if (s?.status === 'playing') {
         navigate(`/game/${tableId}`, { replace: true });
       }
     };

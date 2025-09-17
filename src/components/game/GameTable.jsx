@@ -19,6 +19,8 @@ import {
   declareWinSocket,
   toggleCardSelection,
   clearSelectedCards,
+  reorderCards,
+  reorderMyCards
 } from '../../store/slices/gameSlice';
 import PlayingCard from './PlayingCard';
 import PlayerHand from './PlayerHand';
@@ -45,104 +47,112 @@ const GameTable = () => {
   const [showDeclareModal, setShowDeclareModal] = useState(false);
   const [sets, setSets] = useState([]);
 
-  useEffect(() => {
-    if (tableId && user) {
-      // Join table (server identifies player from JWT)
-      // joinTable(tableId);
+useEffect(() => {
+  if (!tableId || !user) return;
 
-      // Initial masked state
-      dispatch(getGameState(tableId));
+  // Initial masked state via REST
+  dispatch(getGameState(tableId));
 
-      // Socket listeners
-      const socket = socketService.getSocket();
-      if (socket) {
-        // Presence
-        socket.on('rummy/player_connected', () => {
-          dispatch(addNotification({ type: 'info', message: 'Player connected' }));
-        });
-        socket.on('rummy/player_disconnected', () => {
-          dispatch(addNotification({ type: 'warning', message: 'Player disconnected' }));
-        });
+  const socket = socketService.getSocket();
+  if (!socket) return;
 
-        // Masked state on join/rejoin
-        socket.on('rummy/state', (s) => {
-          if (s?.players) dispatch(setPlayers(s.players));
-          if (typeof s?.currentTurn !== 'undefined') dispatch(setCurrentTurn(s.currentTurn));
-          if (s?.discardTop) dispatch(addToDiscardPile(s.discardTop));
-        });
+  // ✅ Clean slate before binding
+  socket.removeAllListeners();
 
-        socket.on('rummy/game_started', (data) => {
-          dispatch(setGameState(data));
-          dispatch(setGameStatus('playing'));
-          dispatch(addNotification({ type: 'success', message: 'Game started! Good luck!' }));
-        });
+  // 🔗 Always rejoin on connect/reconnect
+  socket.on('connect', () => {
+    joinTable(tableId);
+  });
 
-        // Private hand updates (authoritative)
-        socket.on('rummy/your_hand', ({ hand }) => {
-          dispatch(setMyCards(hand || []));
-        });
+  // Presence
+  socket.on('rummy/player_connected', () => {
+    dispatch(addNotification({ type: 'info', message: 'Player connected' }));
+  });
+  socket.on('rummy/player_disconnected', () => {
+    dispatch(addNotification({ type: 'warning', message: 'Player disconnected' }));
+  });
 
-        socket.on('rummy/card_drawn', () => {
-          // card is hidden; rely on rummy/your_hand for your hand
-          dispatch(addNotification({ type: 'info', message: 'Player drew a card' }));
-        });
+  // Masked state on join/rejoin
+  socket.on('rummy/state', (s) => {
+    if (s?.players) dispatch(setPlayers(s.players));
+    if (typeof s?.currentTurn !== 'undefined') dispatch(setCurrentTurn(s.currentTurn));
+    if (s?.discardTop) dispatch(addToDiscardPile(s.discardTop));
+    if (s?.status) dispatch(setGameStatus(s.status));
+  });
 
-        socket.on('rummy/card_discarded', (data) => {
-          dispatch(addToDiscardPile(data.card));
-        });
+  socket.on('rummy/game_started', (data) => {
+    dispatch(setGameState(data));
+    dispatch(setGameStatus('playing'));
+    dispatch(addNotification({ type: 'success', message: 'Game started! Good luck!' }));
+  });
 
-        socket.on('rummy/next_turn', (data) => {
-          dispatch(setCurrentTurn(data.nextPlayerId));
-        });
+  // Private hand (authoritative)
+  socket.on('rummy/your_hand', ({ hand }) => {
+    dispatch(setMyCards(hand || []));
+  });
 
-        socket.on('rummy/player_dropped', () => {
-          dispatch(addNotification({ type: 'warning', message: 'Player dropped from the game' }));
-        });
+  socket.on('rummy/card_drawn', () => {
+    dispatch(addNotification({ type: 'info', message: 'Player drew a card' }));
+  });
 
-        socket.on('rummy/auto_win', (data) => {
-          dispatch(setGameStatus('ended'));
-          dispatch(addNotification({
-            type: data.winner?.toString() === user.id ? 'success' : 'info',
-            message: data.winner?.toString() === user.id ? 'You won by auto-win!' : 'Game ended - auto win',
-          }));
-        });
+  socket.on('rummy/card_discarded', (data) => {
+    dispatch(addToDiscardPile(data.card));
+  });
 
-        socket.on('rummy/win_declared', (data) => {
-          dispatch(setGameStatus('ended'));
-          dispatch(addNotification({
-            type: data.winner.toString() === user.id ? 'success' : 'info',
-            message: data.winner.toString() === user.id ? 'Congratulations! You won!' : 'Game ended',
-          }));
-        });
+  socket.on('rummy/next_turn', (data) => {
+    dispatch(setCurrentTurn(data.nextPlayerId));
+  });
 
-        socket.on('rummy/invalid_declaration', () => {
-          dispatch(addNotification({ type: 'error', message: 'Invalid declaration! Please check your sets.' }));
-        });
+  socket.on('rummy/player_dropped', () => {
+    dispatch(addNotification({ type: 'warning', message: 'Player dropped from the game' }));
+  });
 
-        socket.on('rummy/error', (message) => {
-          dispatch(addNotification({ type: 'error', message }));
-        });
-      }
+  socket.on('rummy/auto_win', (data) => {
+    dispatch(setGameStatus('ended'));
+    dispatch(
+      addNotification({
+        type: data.winner?.toString() === user.id ? 'success' : 'info',
+        message:
+          data.winner?.toString() === user.id
+            ? 'You won by auto-win!'
+            : 'Game ended - auto win',
+      })
+    );
+  });
 
-      return () => {
-        if (socket) {
-          socket.off('rummy/player_connected');
-          socket.off('rummy/player_disconnected');
-          socket.off('rummy/state');
-          socket.off('rummy/game_started');
-          socket.off('rummy/your_hand');
-          socket.off('rummy/card_drawn');
-          socket.off('rummy/card_discarded');
-          socket.off('rummy/next_turn');
-          socket.off('rummy/player_dropped');
-          socket.off('rummy/auto_win');
-          socket.off('rummy/win_declared');
-          socket.off('rummy/invalid_declaration');
-          socket.off('rummy/error');
-        }
-      };
-    }
-  }, [tableId, user, dispatch]);
+  socket.on('rummy/win_declared', (data) => {
+    dispatch(setGameStatus('ended'));
+    dispatch(
+      addNotification({
+        type: data.winner.toString() === user.id ? 'success' : 'info',
+        message:
+          data.winner.toString() === user.id
+            ? 'Congratulations! You won!'
+            : 'Game ended',
+      })
+    );
+  });
+
+  socket.on('rummy/invalid_declaration', () => {
+    dispatch(
+      addNotification({ type: 'error', message: 'Invalid declaration! Please check your sets.' })
+    );
+  });
+
+  socket.on('rummy/error', (message) => {
+    dispatch(addNotification({ type: 'error', message }));
+  });
+
+  // If socket is not connected yet, connect manually
+  if (!socket.connected) {
+    const token = localStorage.getItem('token');
+    socketService.connect(token);
+  }
+
+  return () => {
+    socket.removeAllListeners();
+  };
+}, [tableId, user, dispatch]);
 
   const handleDrawCard = (source) => {
     if (!isMyTurn || !currentGame) return;
@@ -307,12 +317,18 @@ const GameTable = () => {
         {/* Player's Hand */}
         {myCards.length > 0 && (
           <div className="mt-4 sm:mt-8">
-            <PlayerHand
-              cards={myCards}
-              selectedCards={selectedCards}
-              onCardSelect={(card) => dispatch(toggleCardSelection(card))}
-              isMyTurn={isMyTurn}
-            />
+          <PlayerHand
+            cards={myCards}
+            selectedCards={selectedCards}
+            onCardSelect={(card) => dispatch(toggleCardSelection(card))}
+            isMyTurn={isMyTurn}
+            gameId={currentGame?.gameId}
+            userId={user.id}
+            onReorder={(newOrder) => {
+              dispatch(reorderMyCards(newOrder)); // optimistic local update
+              reorderCards(currentGame?.gameId, user.id, newOrder); // socket emit
+            }}
+          />
 
             {selectedCards.length === 1 && isMyTurn && (
               <div className="text-center mt-3 sm:mt-4">
