@@ -45,7 +45,7 @@ const GameTable = () => {
   } = useSelector((state) => state.game);
 
   const [showDeclareModal, setShowDeclareModal] = useState(false);
-  const [sets, setSets] = useState([]);
+  // const [sets, setSets] = useState([]);
 
 useEffect(() => {
   if (!tableId || !user) return;
@@ -173,8 +173,8 @@ useEffect(() => {
   };
 
   const handleDeclareWin = () => {
-    if (!currentGame || sets.length === 0) return;
-    declareWinSocket(currentGame.gameId, user.id, sets);
+    if (!currentGame) return;
+    declareWinSocket(currentGame.gameId);
     setShowDeclareModal(false);
   };
 
@@ -346,7 +346,7 @@ useEffect(() => {
             <div className="bg-white rounded-lg p-4 sm:p-6 max-w-md w-full">
               <h3 className="text-lg font-bold mb-3 sm:mb-4">Declare Win</h3>
               <p className="text-gray-600 mb-4 text-sm sm:text-base">
-                Are you sure you want to declare? Make sure you have valid sets and sequences.
+                 Are you sure you want to declare? We will validate your sequences.
               </p>
               <div className="flex flex-col sm:flex-row space-y-2 sm:space-y-0 sm:space-x-3">
                 <button onClick={handleDeclareWin} className="btn-success flex-1 text-sm">
