@@ -1,8 +1,8 @@
 // client/src/components/game/GameTable.jsx
-import React, { useEffect, useState } from 'react';
-import { useSelector, useDispatch } from 'react-redux';
-import { useParams } from 'react-router-dom';
-import socketService from '../../config/socket';
+import React, { useEffect, useMemo, useState } from "react";
+import { useSelector, useDispatch } from "react-redux";
+import { useParams } from "react-router-dom";
+import socketService from "../../config/socket";
 import {
   setGameState,
   setPlayers,
@@ -17,15 +17,12 @@ import {
   discardCard,
   dropGame,
   declareWinSocket,
-  toggleCardSelection,
-  clearSelectedCards,
   reorderCards,
-  reorderMyCards
-} from '../../store/slices/gameSlice';
-import PlayingCard from './PlayingCard';
-import PlayerHand from './PlayerHand';
-import LoadingSpinner from '../common/LoadingSpinner';
-import ErrorMessage from '../common/ErrorMessage';
+  reorderMyCards,
+} from "../../store/slices/gameSlice";
+import PlayerHand from "./PlayerHand";
+import LoadingSpinner from "../common/LoadingSpinner";
+import ErrorMessage from "../common/ErrorMessage";
 
 const GameTable = () => {
   const dispatch = useDispatch();
@@ -37,7 +34,6 @@ const GameTable = () => {
     currentTurn,
     myCards,
     discardPile,
-    selectedCards,
     gameStatus,
     isMyTurn,
     loading,
@@ -45,186 +41,136 @@ const GameTable = () => {
   } = useSelector((state) => state.game);
 
   const [showDeclareModal, setShowDeclareModal] = useState(false);
-  // const [sets, setSets] = useState([]);
+  const discardTop = useMemo(
+    () => (discardPile?.length ? discardPile[discardPile.length - 1] : null),
+    [discardPile]
+  );
 
-useEffect(() => {
-  if (!tableId || !user) return;
+  // ---------------- SOCKET SETUP ----------------
+  useEffect(() => {
+    if (!tableId || !user) return;
+    dispatch(getGameState(tableId));
 
-  // Initial masked state via REST
-  dispatch(getGameState(tableId));
-
-  const socket = socketService.getSocket();
-  if (!socket) return;
-
-  // ✅ Clean slate before binding
-  socket.removeAllListeners();
-
-  // 🔗 Always rejoin on connect/reconnect
-  socket.on('connect', () => {
-    joinTable(tableId);
-  });
-
-  // Presence
-  socket.on('rummy/player_connected', () => {
-    dispatch(addNotification({ type: 'info', message: 'Player connected' }));
-  });
-  socket.on('rummy/player_disconnected', () => {
-    dispatch(addNotification({ type: 'warning', message: 'Player disconnected' }));
-  });
-
-  // Masked state on join/rejoin
-  socket.on('rummy/state', (s) => {
-    if (s?.players) dispatch(setPlayers(s.players));
-    if (typeof s?.currentTurn !== 'undefined') dispatch(setCurrentTurn(s.currentTurn));
-    if (s?.discardTop) dispatch(addToDiscardPile(s.discardTop));
-    if (s?.status) dispatch(setGameStatus(s.status));
-  });
-
-  socket.on('rummy/game_started', (data) => {
-    dispatch(setGameState(data));
-    dispatch(setGameStatus('playing'));
-    dispatch(addNotification({ type: 'success', message: 'Game started! Good luck!' }));
-  });
-
-  // Private hand (authoritative)
-  socket.on('rummy/your_hand', ({ hand }) => {
-    dispatch(setMyCards(hand || []));
-  });
-
-  socket.on('rummy/card_drawn', () => {
-    dispatch(addNotification({ type: 'info', message: 'Player drew a card' }));
-  });
-
-  socket.on('rummy/card_discarded', (data) => {
-    dispatch(addToDiscardPile(data.card));
-  });
-
-  socket.on('rummy/next_turn', (data) => {
-    dispatch(setCurrentTurn(data.nextPlayerId));
-  });
-
-  socket.on('rummy/player_dropped', () => {
-    dispatch(addNotification({ type: 'warning', message: 'Player dropped from the game' }));
-  });
-
-  socket.on('rummy/auto_win', (data) => {
-    dispatch(setGameStatus('ended'));
-    dispatch(
-      addNotification({
-        type: data.winner?.toString() === user.id ? 'success' : 'info',
-        message:
-          data.winner?.toString() === user.id
-            ? 'You won by auto-win!'
-            : 'Game ended - auto win',
-      })
-    );
-  });
-
-  socket.on('rummy/win_declared', (data) => {
-    dispatch(setGameStatus('ended'));
-    dispatch(
-      addNotification({
-        type: data.winner.toString() === user.id ? 'success' : 'info',
-        message:
-          data.winner.toString() === user.id
-            ? 'Congratulations! You won!'
-            : 'Game ended',
-      })
-    );
-  });
-
-  socket.on('rummy/invalid_declaration', () => {
-    dispatch(
-      addNotification({ type: 'error', message: 'Invalid declaration! Please check your sets.' })
-    );
-  });
-
-  socket.on('rummy/error', (message) => {
-    dispatch(addNotification({ type: 'error', message }));
-  });
-
-  // If socket is not connected yet, connect manually
-  if (!socket.connected) {
-    const token = localStorage.getItem('token');
-    socketService.connect(token);
-  }
-
-  return () => {
+    const socket = socketService.getSocket();
+    if (!socket) return;
     socket.removeAllListeners();
-  };
-}, [tableId, user, dispatch]);
 
+    socket.on("connect", () => joinTable(tableId));
+    socket.on("rummy/player_connected", () =>
+      dispatch(addNotification({ type: "info", message: "Player connected" }))
+    );
+    socket.on("rummy/player_disconnected", () =>
+      dispatch(addNotification({ type: "warning", message: "Player disconnected" }))
+    );
+    socket.on("rummy/state", (s) => {
+      if (s?.players) dispatch(setPlayers(s.players));
+      if (typeof s?.currentTurn !== "undefined") dispatch(setCurrentTurn(s.currentTurn));
+      if (s?.discardTop) dispatch(addToDiscardPile(s.discardTop));
+      if (s?.status) dispatch(setGameStatus(s.status));
+    });
+    socket.on("rummy/game_started", (data) => {
+      dispatch(setGameState(data));
+      dispatch(setGameStatus("playing"));
+      dispatch(addNotification({ type: "success", message: "Game started! Good luck!" }));
+    });
+    socket.on("rummy/your_hand", ({ hand }) => dispatch(setMyCards(hand || [])));
+    socket.on("rummy/card_discarded", (data) => dispatch(addToDiscardPile(data.card)));
+    socket.on("rummy/next_turn", (data) => dispatch(setCurrentTurn(data.nextPlayerId)));
+    socket.on("rummy/player_dropped", () =>
+      dispatch(addNotification({ type: "warning", message: "Player dropped" }))
+    );
+    socket.on("rummy/win_declared", (data) => {
+      dispatch(setGameStatus("ended"));
+      dispatch(
+        addNotification({
+          type: data.winner.toString() === user.id ? "success" : "info",
+          message:
+            data.winner.toString() === user.id
+              ? "Congratulations! You won!"
+              : "Game ended",
+        })
+      );
+    });
+    socket.on("rummy/error", (message) =>
+      dispatch(addNotification({ type: "error", message }))
+    );
+
+    if (!socket.connected) {
+      const token = localStorage.getItem("token");
+      socketService.connect(token);
+    }
+
+    return () => socket.removeAllListeners();
+  }, [tableId, user, dispatch]);
+
+  // ---------------- HANDLERS ----------------
   const handleDrawCard = (source) => {
     if (!isMyTurn || !currentGame) return;
-    // Map 'discardPile' clicks to server 'discard' source
-    const mapped = source === 'discardPile' ? 'discard' : source;
-    drawCard(currentGame.gameId, user.id, mapped);
+    drawCard(currentGame.gameId, user.id, source === "discardPile" ? "discard" : source);
   };
 
-  const handleDiscardCard = () => {
-    if (!isMyTurn || selectedCards.length !== 1 || !currentGame) return;
-    discardCard(currentGame.gameId, user.id, selectedCards[0]);
-    dispatch(clearSelectedCards());
+  const handleDiscardCard = (card) => {
+    if (!isMyTurn || !currentGame) return;
+    if (!card) return;
+    discardCard(currentGame.gameId, user.id, card);
   };
 
-  const handleDrop = () => {
-    if (!currentGame) return;
-    dropGame(currentGame.gameId, user.id);
-  };
-
+  const handleDrop = () => currentGame && dropGame(currentGame.gameId, user.id);
   const handleDeclareWin = () => {
     if (!currentGame) return;
     declareWinSocket(currentGame.gameId);
     setShowDeclareModal(false);
   };
 
-  if (loading) {
+  // ---------------- RENDER ----------------
+  if (loading)
     return (
       <div className="flex items-center justify-center min-h-screen">
         <LoadingSpinner size="xl" />
       </div>
     );
-  }
-  if (error) {
+  if (error)
     return (
       <div className="flex items-center justify-center min-h-screen">
         <ErrorMessage message={error} onRetry={() => dispatch(getGameState(tableId))} />
       </div>
     );
-  }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-green-800 to-green-900 p-2 sm:p-4">
-      <div className="max-w-6xl mx-auto">
-        {/* Game Header */}
-        <div className="bg-white rounded-lg shadow-lg p-3 sm:p-4 mb-4 sm:mb-6">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between space-y-3 sm:space-y-0">
+    <div className="min-h-screen w-full bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-green-900 via-green-950 to-black text-white select-none">
+      <div className="mx-auto flex items-center justify-center p-2 sm:p-4 md:p-6 h-screen">
+        <div className="relative w-full aspect-[9/16] sm:aspect-[10/16] md:aspect-[16/9] md:max-w-[900px] rounded-3xl shadow-[0_0_60px_-10px_rgba(0,0,0,0.6)] overflow-hidden border border-white/10">
+
+          {/* ---------- HEADER ---------- */}
+          <div className="px-3 py-2 bg-neutral-950/60 border-b border-white/10 flex items-center justify-between">
             <div>
-              <h1 className="text-xl sm:text-2xl font-bold text-gray-900">Rummy Game</h1>
-              <p className="text-gray-600 text-sm sm:text-base">
-                Status: <span className="font-medium capitalize">{gameStatus}</span>
+              <h1 className="text-lg sm:text-xl font-semibold">Rummy Table</h1>
+              <p className="text-xs sm:text-sm text-white/70">
+                Status: <span className="capitalize">{gameStatus}</span>
                 {currentTurn && (
                   <>
-                    {' | '}
-                    Current Turn:{' '}
+                    {" "}
+                    • Turn:{" "}
                     <span className="font-medium">
-                      {String(currentTurn) === String(user.id) ? 'Your turn' : 'Waiting...'}
+                      {String(currentTurn) === String(user.id) ? "You" : "Opponent"}
                     </span>
                   </>
                 )}
               </p>
             </div>
-
-            <div className="flex flex-col sm:flex-row space-y-2 sm:space-y-0 sm:space-x-2">
-              {gameStatus === 'playing' && (
+            <div className="flex items-center gap-2">
+              {gameStatus === "playing" && (
                 <>
-                  <button onClick={handleDrop} className="btn-danger text-sm px-3 py-2">
+                  <button
+                    onClick={handleDrop}
+                    className="px-3 py-1.5 rounded bg-red-500 hover:bg-red-400 text-white text-sm"
+                  >
                     Drop
                   </button>
                   <button
                     onClick={() => setShowDeclareModal(true)}
                     disabled={!isMyTurn}
-                    className="btn-success disabled:opacity-50 text-sm px-3 py-2"
+                    className="px-3 py-1.5 rounded bg-emerald-500 hover:bg-emerald-400 disabled:opacity-50 text-black text-sm"
                   >
                     Declare
                   </button>
@@ -232,136 +178,109 @@ useEffect(() => {
               )}
             </div>
           </div>
-        </div>
 
-        {/* Game Table */}
-        <div
-          className="game-table relative mx-auto"
-          style={{
-            width: 'min(90vw, 600px)',
-            height: 'min(60vw, 400px)',
-            minHeight: '300px',
-          }}
-        >
-          {/* Draw and Discard Piles */}
-          <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 flex space-x-4 sm:space-x-8">
-            {/* Draw Pile */}
-            <div className="text-center">
-              <div
-                onClick={() => handleDrawCard('drawPile')}
-                className={`playing-card bg-blue-600 text-white w-12 h-16 sm:w-16 sm:h-24 ${
-                  isMyTurn ? 'cursor-pointer hover:bg-blue-700' : 'cursor-not-allowed opacity-50'
-                }`}
-              >
-                <div className="text-xs sm:text-sm">DRAW</div>
+          {/* ---------- TABLE AREA ---------- */}
+          <div className="relative h-[65%] sm:h-[64%] md:h-[68%] bg-[url('https://images.unsplash.com/photo-1521207418485-99c705420785?q=80&w=1600&auto=format&fit=crop')] bg-center bg-cover select-none">
+            <div className="absolute inset-0 bg-emerald-900/70 backdrop-blur-[1px]" />
+            <div className="relative z-10 h-full flex flex-col items-center justify-center gap-6">
+              <div className="text-sm uppercase tracking-[0.2em] text-emerald-200/80">
+                Play Area
               </div>
-              <p className="text-white text-xs sm:text-sm mt-1 sm:mt-2">Draw Pile</p>
-            </div>
 
-            {/* Discard Pile */}
-            <div className="text-center">
-              <div
-                onClick={() => handleDrawCard('discard')}
-                className={`playing-card w-12 h-16 sm:w-16 sm:h-24 ${
-                  isMyTurn ? 'cursor-pointer hover:shadow-lg' : 'cursor-not-allowed opacity-50'
-                }`}
-              >
-                {discardPile.length > 0 ? (
-                  <PlayingCard card={discardPile[discardPile.length - 1]} />
-                ) : (
-                  <div className="text-xs sm:text-sm text-gray-400">EMPTY</div>
-                )}
-              </div>
-              <p className="text-white text-xs sm:text-sm mt-1 sm:mt-2">Discard Pile</p>
-            </div>
-          </div>
+              {/* DRAW / DISCARD PILES */}
+              <div className="flex items-end gap-10">
+                {/* Draw Pile */}
+                <div className="text-center">
+                  <div
+                    onClick={() => handleDrawCard("drawPile")}
+                    className={`w-14 h-20 md:w-16 md:h-24 rounded-xl border border-emerald-700 bg-emerald-800 shadow-xl ${
+                      isMyTurn
+                        ? "cursor-pointer hover:scale-105 transition-transform"
+                        : "opacity-60 cursor-not-allowed"
+                    }`}
+                    title={isMyTurn ? "Draw from closed pile" : "Wait for your turn"}
+                  />
+                  <p className="mt-2 text-xs text-emerald-200/80">Closed Pile</p>
+                </div>
 
-          {/* Players around the table */}
-          {players.map((player, index) => {
-            const isCurrentPlayer = String(player.playerId) === String(user.id);
-            const angle = (index * 360) / Math.max(players.length, 1);
-            const radius = Math.min(150, window.innerWidth * 0.25);
-            const x = Math.cos((angle * Math.PI) / 180) * radius;
-            const y = Math.sin((angle * Math.PI) / 180) * radius;
-
-            return (
-              <div
-                key={player.playerId}
-                className="player-position"
-                style={{
-                  left: `calc(50% + ${x}px)`,
-                  top: `calc(50% + ${y}px)`,
-                  transform: 'translate(-50%, -50%)',
-                }}
-              >
-                <div
-                  className={`bg-white rounded-lg p-2 sm:p-3 shadow-lg ${
-                    String(currentTurn) === String(player.playerId) ? 'ring-2 ring-yellow-400' : ''
-                  }`}
-                >
-                  <div className="text-center">
-                    <p className="font-medium text-gray-900 text-xs sm:text-sm">
-                      {isCurrentPlayer ? 'You' : player.username || `Player ${index + 1}`}
-                    </p>
-                    <p className="text-xs sm:text-sm text-gray-600">
-                      Cards: {isCurrentPlayer ? myCards.length : player.handCount ?? 0}
-                    </p>
-                    <p className="text-xs text-gray-500 capitalize">{player.status}</p>
+                {/* Discard Pile */}
+                <div className="text-center">
+                  <div
+                    onClick={() => handleDrawCard("discard")}
+                    className={`w-14 h-20 md:w-16 md:h-24 rounded-xl border border-gray-200 bg-white shadow-xl flex items-center justify-center ${
+                      isMyTurn
+                        ? "cursor-pointer hover:scale-105 transition-transform"
+                        : "opacity-60 cursor-not-allowed"
+                    }`}
+                    title={isMyTurn ? "Pick from discard" : "Wait for your turn"}
+                  >
+                    {discardTop ? (
+                      <div className="w-full h-full flex items-center justify-center text-gray-900 text-xl">
+                        {discardTop.rank}
+                        {suitGlyph(discardTop.suit)}
+                      </div>
+                    ) : (
+                      <span className="text-xs text-gray-400">EMPTY</span>
+                    )}
                   </div>
+                  <p className="mt-2 text-xs text-emerald-200/80">Discard</p>
                 </div>
               </div>
-            );
-          })}
-        </div>
 
-        {/* Player's Hand */}
-        {myCards.length > 0 && (
-          <div className="mt-4 sm:mt-8">
-          <PlayerHand
-            cards={myCards}
-            selectedCards={selectedCards}
-            onCardSelect={(card) => dispatch(toggleCardSelection(card))}
-            isMyTurn={isMyTurn}
-            gameId={currentGame?.gameId}
-            userId={user.id}
-            onReorder={(newOrder) => {
-              dispatch(reorderMyCards(newOrder)); // optimistic local update
-              reorderCards(currentGame?.gameId, user.id, newOrder); // socket emit
-            }}
-          />
-
-            {selectedCards.length === 1 && isMyTurn && (
-              <div className="text-center mt-3 sm:mt-4">
-                <button onClick={handleDiscardCard} className="btn-primary w-full sm:w-auto">
-                  Discard Selected Card
-                </button>
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* Declare Modal */}
-        {showDeclareModal && (
-          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-            <div className="bg-white rounded-lg p-4 sm:p-6 max-w-md w-full">
-              <h3 className="text-lg font-bold mb-3 sm:mb-4">Declare Win</h3>
-              <p className="text-gray-600 mb-4 text-sm sm:text-base">
-                 Are you sure you want to declare? We will validate your sequences.
-              </p>
-              <div className="flex flex-col sm:flex-row space-y-2 sm:space-y-0 sm:space-x-3">
-                <button onClick={handleDeclareWin} className="btn-success flex-1 text-sm">
-                  Declare Win
-                </button>
-                <button onClick={() => setShowDeclareModal(false)} className="btn-secondary flex-1 text-sm">
-                  Cancel
-                </button>
+              <div className="text-xs text-emerald-200/80">
+                {isMyTurn ? "Your turn — draw then discard" : "Waiting for opponent…"}
               </div>
             </div>
+            <div className="absolute inset-0 pointer-events-none bg-[radial-gradient(circle_at_center,transparent_40%,rgba(0,0,0,0.55)_100%)]" />
           </div>
-        )}
+
+          {/* ---------- PLAYER HAND ---------- */}
+          <div className="absolute bottom-0 left-0 right-0 z-20 h-[35%] sm:h-[34%] md:h-[32%] bg-black/20 backdrop-blur-sm border-t border-white/10">
+            <PlayerHand
+              cards={myCards}
+              isMyTurn={isMyTurn}
+              onReorder={(newOrder) => {
+                dispatch(reorderMyCards(newOrder));
+                reorderCards(currentGame?.gameId, user.id, newOrder);
+              }}
+              onDiscard={(card) => handleDiscardCard(card)}
+            />
+          </div>
+        </div>
       </div>
+
+      {/* ---------- DECLARE MODAL ---------- */}
+      {showDeclareModal && (
+        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl p-5 max-w-md w-full">
+            <h3 className="text-lg font-bold mb-2">Declare Win</h3>
+            <p className="text-gray-600 mb-4 text-sm">
+              Are you sure you want to declare? We will validate your sequences.
+            </p>
+            <div className="flex flex-col sm:flex-row gap-2">
+              <button
+                onClick={handleDeclareWin}
+                className="flex-1 px-3 py-2 rounded bg-emerald-500 text-black font-semibold hover:bg-emerald-400"
+              >
+                Declare
+              </button>
+              <button
+                onClick={() => setShowDeclareModal(false)}
+                className="flex-1 px-3 py-2 rounded bg-neutral-200 text-neutral-900 hover:bg-neutral-300"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
+
+function suitGlyph(suit) {
+  const map = { Hearts: "♥", Diamonds: "♦", Clubs: "♣", Spades: "♠" };
+  return map[suit] || "";
+}
 
 export default GameTable;

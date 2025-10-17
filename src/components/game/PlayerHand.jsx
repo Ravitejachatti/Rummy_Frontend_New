@@ -1,378 +1,310 @@
 // client/src/components/game/PlayerHand.jsx
-import React, {useState, useRef} from "react";
-import { DragDropContext, Droppable, Draggable } from "react-beautiful-dnd";
-import PlayingCard from "./PlayingCard";
-import socketService from "../../config/socket";
+import React, { useEffect, useState, useRef } from "react";
 
-// Main PlayerHand Component
-const PlayerHand = ({
-  cards = [],
-  selectedCards = [],
-  onCardSelect,
-  isMyTurn = false,
-  onReorder,
-}) => { 
-  const [groups, setGroups] = useState([]);
-  const [showGrouping, setShowGrouping] = useState(false);
-  const [draggedIndex, setDraggedIndex] = useState(null);
-  const [touchStartIndex, setTouchStartIndex] = useState(null);
-  const [touchCurrentIndex, setTouchCurrentIndex] = useState(null);
-  const touchStartPos = useRef({ x: 0, y: 0 });
-  const draggedElement = useRef(null);
+// ---------- PlayingCard ----------
+const glyph = (s) =>
+  s === "Hearts" ? "♥" : s === "Diamonds" ? "♦" : s === "Clubs" ? "♣" : "♠";
 
-  // Check if card is selected
-  const isCardSelected = (card) =>
-    selectedCards.some(
-      (selected) => selected.suit === card.suit && selected.rank === card.rank
-    );
+const suitColor = (s) =>
+  s === "Hearts" || s === "Diamonds" ? "text-red-600" : "text-gray-900";
 
-  // Auto-detect potential groups
-  const detectGroups = () => {
-    if (cards.length === 0) return [];
-    
-    const detectedGroups = [];
-    const used = new Set();
+const SIZE_MAP = {
+  sm: { w: "w-14", h: "h-20", font: "text-lg" },
+  md: { w: "w-16", h: "h-24", font: "text-xl" },
+  lg: { w: "w-20", h: "h-28", font: "text-2xl" },
+};
 
-    const suits = ['Hearts', 'Diamonds', 'Clubs', 'Spades'];
-    const rankOrder = ['A', '2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K'];
-    
-    // Detect sequences
-    suits.forEach(suit => {
-      const suitCards = cards
-        .map((card, idx) => ({ ...card, originalIndex: idx }))
-        .filter(card => card.suit === suit && !used.has(`${card.rank}-${card.suit}`))
-        .sort((a, b) => rankOrder.indexOf(a.rank) - rankOrder.indexOf(b.rank));
-
-      for (let i = 0; i < suitCards.length - 2; i++) {
-        const sequence = [suitCards[i]];
-        for (let j = i + 1; j < suitCards.length; j++) {
-          const lastCard = sequence[sequence.length - 1];
-          const currentCard = suitCards[j];
-          if (rankOrder.indexOf(currentCard.rank) === rankOrder.indexOf(lastCard.rank) + 1) {
-            sequence.push(currentCard);
-          }
-        }
-        
-        if (sequence.length >= 3) {
-          detectedGroups.push({
-            type: 'sequence',
-            cards: sequence,
-            suit: suit
-          });
-          sequence.forEach(card => used.add(`${card.rank}-${card.suit}`));
-        }
-      }
-    });
-
-    // Detect sets
-    const rankGroups = {};
-    cards.forEach((card, idx) => {
-      if (!used.has(`${card.rank}-${card.suit}`)) {
-        if (!rankGroups[card.rank]) rankGroups[card.rank] = [];
-        rankGroups[card.rank].push({ ...card, originalIndex: idx });
-      }
-    });
-
-    Object.entries(rankGroups).forEach(([rank, rankCards]) => {
-      if (rankCards.length >= 3) {
-        detectedGroups.push({
-          type: 'set',
-          cards: rankCards,
-          rank: rank
-        });
-        rankCards.forEach(card => used.add(`${card.rank}-${card.suit}`));
-      }
-    });
-
-    return detectedGroups;
-  };
-
-  // Drag handlers for desktop
-  const handleDragStart = (e, index) => {
-    if (!isMyTurn) {
-      e.preventDefault();
-      return;
-    }
-    setDraggedIndex(index);
-    e.dataTransfer.effectAllowed = 'move';
-    e.dataTransfer.setData('text/html', e.currentTarget);
-  };
-
-  const handleDragEnd = () => {
-    setDraggedIndex(null);
-  };
-
-  const handleDragOver = (e) => {
-    e.preventDefault();
-    e.dataTransfer.dropEffect = 'move';
-  };
-
-  const handleDrop = (e, dropIndex) => {
-    e.preventDefault();
-    e.stopPropagation();
-    
-    if (draggedIndex === null || draggedIndex === dropIndex || !isMyTurn) return;
-
-    const reordered = Array.from(cards);
-    const [removed] = reordered.splice(draggedIndex, 1);
-    reordered.splice(dropIndex, 0, removed);
-
-    onReorder(reordered);
-    setDraggedIndex(null);
-  };
-
-  // Touch handlers for mobile
-  const handleTouchStart = (e, index) => {
-    if (!isMyTurn) return;
-    
-    const touch = e.touches[0];
-    touchStartPos.current = { x: touch.clientX, y: touch.clientY };
-    setTouchStartIndex(index);
-    setTouchCurrentIndex(index);
-    
-    // Create ghost element
-    const target = e.currentTarget;
-    const clone = target.cloneNode(true);
-    clone.style.position = 'fixed';
-    clone.style.pointerEvents = 'none';
-    clone.style.zIndex = '1000';
-    clone.style.opacity = '0.8';
-    clone.style.left = `${touch.clientX - target.offsetWidth / 2}px`;
-    clone.style.top = `${touch.clientY - target.offsetHeight / 2}px`;
-    clone.id = 'drag-ghost';
-    document.body.appendChild(clone);
-    draggedElement.current = clone;
-  };
-
-  const handleTouchMove = (e) => {
-    if (touchStartIndex === null || !draggedElement.current) return;
-    
-    e.preventDefault();
-    const touch = e.touches[0];
-    
-    // Move ghost element
-    const ghost = draggedElement.current;
-    ghost.style.left = `${touch.clientX - ghost.offsetWidth / 2}px`;
-    ghost.style.top = `${touch.clientY - ghost.offsetHeight / 2}px`;
-
-    // Detect drop position
-    const elements = document.elementsFromPoint(touch.clientX, touch.clientY);
-    const cardElement = elements.find(el => el.classList.contains('card-drop-zone'));
-    if (cardElement) {
-      const index = parseInt(cardElement.dataset.index);
-      if (!isNaN(index)) {
-        setTouchCurrentIndex(index);
-      }
-    }
-  };
-
-  const handleTouchEnd = (e, endIndex) => {
-    if (touchStartIndex === null) return;
-
-    // Remove ghost element
-    if (draggedElement.current) {
-      draggedElement.current.remove();
-      draggedElement.current = null;
-    }
-
-    const dropIndex = touchCurrentIndex !== null ? touchCurrentIndex : endIndex;
-
-    if (touchStartIndex !== dropIndex && isMyTurn) {
-      const reordered = Array.from(cards);
-      const [removed] = reordered.splice(touchStartIndex, 1);
-      reordered.splice(dropIndex, 0, removed);
-      onReorder(reordered);
-    }
-
-    setTouchStartIndex(null);
-    setTouchCurrentIndex(null);
-  };
-
-  // Sort cards
-  const sortCards = (method) => {
-    let sorted = [...cards];
-    
-    if (method === 'suit') {
-      const suitOrder = { 'Spades': 0, 'Hearts': 1, 'Diamonds': 2, 'Clubs': 3 };
-      const rankOrder = ['A', '2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K'];
-      sorted.sort((a, b) => {
-        if (suitOrder[a.suit] !== suitOrder[b.suit]) {
-          return suitOrder[a.suit] - suitOrder[b.suit];
-        }
-        return rankOrder.indexOf(a.rank) - rankOrder.indexOf(b.rank);
-      });
-    } else if (method === 'rank') {
-      const rankOrder = ['A', '2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K'];
-      sorted.sort((a, b) => rankOrder.indexOf(a.rank) - rankOrder.indexOf(b.rank));
-    } else if (method === 'group') {
-      const detectedGroups = detectGroups();
-      const grouped = new Set();
-      sorted = [];
-      
-      detectedGroups.forEach(group => {
-        group.cards.forEach(card => {
-          sorted.push(card);
-          grouped.add(`${card.rank}-${card.suit}`);
-        });
-      });
-      
-      cards.forEach(card => {
-        if (!grouped.has(`${card.rank}-${card.suit}`)) {
-          sorted.push(card);
-        }
-      });
-    }
-    
-    onReorder(sorted);
-  };
-
-  // Toggle grouping
-  const toggleGrouping = () => {
-    const newShowGrouping = !showGrouping;
-    setShowGrouping(newShowGrouping);
-    
-    if (newShowGrouping) {
-      const detected = detectGroups();
-      setGroups(detected);
-      if (detected.length > 0) {
-        sortCards('group');
-      }
-    } else {
-      setGroups([]);
-    }
-  };
-
-  // Check if card is in a group
-  const isCardInGroup = (card) => {
-    if (!showGrouping) return false;
-    return groups.some(group => 
-      group.cards.some(c => c.rank === card.rank && c.suit === card.suit)
-    );
-  };
+function PlayingCard({ card, size = "md", selected = false, onClick }) {
+  if (!card) return null;
+  const color = suitColor(card.suit);
+  const sz = SIZE_MAP[size] || SIZE_MAP.md;
 
   return (
-    <div className="bg-gradient-to-br from-white to-gray-50 rounded-xl shadow-2xl p-3 sm:p-4 md:p-6">
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-3 sm:mb-4 gap-2">
-        <div>
-          <h3 className="text-lg sm:text-xl font-bold text-gray-900 flex items-center gap-2">
-            <span>🃏</span> Your Hand
-          </h3>
-          <div className="text-xs sm:text-sm text-gray-600 mt-1">
-            {cards.length} cards | {selectedCards.length} selected
-            {showGrouping && groups.length > 0 && ` | ${groups.length} groups`}
-          </div>
+    <div
+      onClick={onClick}
+      className={`relative bg-white rounded-xl shadow-md border transition-all duration-150 select-none cursor-pointer
+        ${sz.w} ${sz.h} ${color}
+        ${selected ? "ring-2 ring-amber-400 border-amber-400 scale-105" : "border-gray-200"}
+        hover:-translate-y-1
+        flex items-start justify-start`}
+    >
+      <div className="p-1">
+        <div
+          className={`flex flex-col items-start justify-start leading-tight ${sz.font} font-bold`}
+        >
+          <span>{card.rank}</span>
+          <span className="-mt-1">{glyph(card.suit)}</span>
         </div>
-        
-        {/* Action Buttons */}
-        <div className="flex flex-wrap gap-2">
+      </div>
+    </div>
+  );
+}
+
+// ---------- PlayerHand ----------
+export default function PlayerHand({ cards = [], isMyTurn = false, onDiscard }) {
+  const [ungrouped, setUngrouped] = useState(cards);
+  const [groups, setGroups] = useState([]);
+  const [selected, setSelected] = useState(new Set());
+  const [selectedGroup, setSelectedGroup] = useState(null);
+  const containerRef = useRef(null);
+
+  useEffect(() => {
+    setUngrouped(cards);
+    setSelected(new Set());
+  }, [cards]);
+
+  // ---------- Selection ----------
+  const toggleSelect = (index) => {
+    setSelected((prev) => {
+      const n = new Set(prev);
+      n.has(index) ? n.delete(index) : n.add(index);
+      return n;
+    });
+    setSelectedGroup(null);
+  };
+
+  // ---------- Group ----------
+  const handleGroupSelected = () => {
+    if (selected.size === 0) return;
+    const type = prompt("Enter group name (Pure / Impure / Set / 1st Life)", "Pure");
+    if (!type) return;
+
+    const ids = Array.from(selected).sort((a, b) => a - b);
+    const chosen = ids.map((i) => ungrouped[i]);
+    const remaining = [...ungrouped];
+    for (let i = ids.length - 1; i >= 0; i--) remaining.splice(ids[i], 1);
+
+    setUngrouped(remaining);
+    setGroups((g) => [...g, { id: Date.now().toString(), name: type, items: chosen }]);
+    setSelected(new Set());
+  };
+
+  // ---------- Ungroup ----------
+  const handleUngroup = (groupId) => {
+    const group = groups.find((g) => g.id === groupId);
+    if (!group) return;
+    setUngrouped((prev) => [...prev, ...group.items]);
+    setGroups((prev) => prev.filter((g) => g.id !== groupId));
+    setSelectedGroup(null);
+  };
+
+  // ---------- Discard ----------
+  const handleDiscard = () => {
+    if (!isMyTurn) return;
+
+    if (selected.size === 1) {
+      const idx = Array.from(selected)[0];
+      const card = ungrouped[idx];
+      onDiscard?.(card);
+      const next = [...ungrouped];
+      next.splice(idx, 1);
+      setUngrouped(next);
+      setSelected(new Set());
+    } else if (selectedGroup) {
+      const { gid, index } = selectedGroup;
+      const gIdx = groups.findIndex((g) => g.id === gid);
+      if (gIdx >= 0 && groups[gIdx].items[index]) {
+        const card = groups[gIdx].items[index];
+        onDiscard?.(card);
+        setGroups((prev) => {
+          const copy = structuredClone(prev);
+          copy[gIdx].items.splice(index, 1);
+          if (copy[gIdx].items.length === 0) copy.splice(gIdx, 1);
+          return copy;
+        });
+        setSelectedGroup(null);
+      }
+    }
+  };
+
+  // ---------- Custom Drag Logic (within ungrouped & within same group) ----------
+  const dragState = useRef(null);
+
+  const handleMouseDown = (e, zone, index) => {
+    dragState.current = { zone, index, startX: e.clientX, currentX: e.clientX };
+    document.addEventListener("mousemove", handleMouseMove);
+    document.addEventListener("mouseup", handleMouseUp);
+  };
+
+  const handleMouseMove = (e) => {
+    if (!dragState.current) return;
+    dragState.current.currentX = e.clientX;
+    const el = document.getElementById(`drag-${dragState.current.zone}-${dragState.current.index}`);
+    if (el) {
+      el.style.position = "relative";
+      el.style.zIndex = 999;
+      el.style.transform = `translateX(${e.clientX - dragState.current.startX}px) scale(1.05)`;
+    }
+  };
+
+  const handleMouseUp = (e) => {
+    if (!dragState.current) return;
+    const { zone, index, startX, currentX } = dragState.current;
+    const delta = currentX - startX;
+
+    // compute new index based on direction
+    const targetIndex =
+      Math.max(0, Math.min(getZone(zone).length - 1, index + Math.round(delta / 60)));
+
+    if (targetIndex !== index) {
+      if (zone === "ungrouped") {
+        setUngrouped((prev) => {
+          const arr = [...prev];
+          const [moved] = arr.splice(index, 1);
+          arr.splice(targetIndex, 0, moved);
+          return arr;
+        });
+      } else {
+        setGroups((prev) =>
+          prev.map((g) =>
+            g.id === zone
+              ? {
+                  ...g,
+                  items: (() => {
+                    const arr = [...g.items];
+                    const [moved] = arr.splice(index, 1);
+                    arr.splice(targetIndex, 0, moved);
+                    return arr;
+                  })(),
+                }
+              : g
+          )
+        );
+      }
+    }
+
+    // Reset transform
+    const el = document.getElementById(`drag-${zone}-${index}`);
+    if (el) {
+      el.style.transform = "";
+      el.style.zIndex = "";
+    }
+
+    dragState.current = null;
+    document.removeEventListener("mousemove", handleMouseMove);
+    document.removeEventListener("mouseup", handleMouseUp);
+  };
+
+  const getZone = (zone) => {
+    if (zone === "ungrouped") return ungrouped;
+    const group = groups.find((g) => g.id === zone);
+    return group ? group.items : [];
+  };
+
+  // ---------- UI ----------
+  const totalCards = ungrouped.length + groups.reduce((a, g) => a + g.items.length, 0);
+
+  return (
+    <div className="w-full h-full flex flex-col justify-end p-2 select-none">
+      {/* Top Controls */}
+      <div className="flex items-center justify-between mb-1 text-xs text-white/70">
+        <div>
+          {totalCards} cards
+          {selected.size > 0 && ` • ${selected.size} selected`}
+        </div>
+        <div className="flex gap-2">
           <button
-            onClick={() => sortCards('suit')}
-            className="px-2 py-1 sm:px-3 sm:py-1.5 text-xs sm:text-sm bg-blue-500 hover:bg-blue-600 text-white rounded-lg transition-colors active:scale-95 disabled:opacity-50"
-            disabled={!isMyTurn}
+            onClick={handleGroupSelected}
+            disabled={selected.size === 0}
+            className="bg-amber-500 text-black font-semibold px-3 py-1 rounded-full disabled:opacity-40 hover:bg-amber-400"
           >
-            ♠ Suit
+            Group ({selected.size})
           </button>
           <button
-            onClick={() => sortCards('rank')}
-            className="px-2 py-1 sm:px-3 sm:py-1.5 text-xs sm:text-sm bg-purple-500 hover:bg-purple-600 text-white rounded-lg transition-colors active:scale-95 disabled:opacity-50"
-            disabled={!isMyTurn}
+            onClick={handleDiscard}
+            disabled={
+              !isMyTurn ||
+              !(
+                selected.size === 1 ||
+                (selectedGroup && selectedGroup.index != null)
+              )
+            }
+            className="bg-blue-500 text-white font-semibold px-3 py-1 rounded-full disabled:opacity-40 hover:bg-blue-400"
           >
-            # Rank
-          </button>
-          <button
-            onClick={toggleGrouping}
-            className={`px-2 py-1 sm:px-3 sm:py-1.5 text-xs sm:text-sm rounded-lg transition-all active:scale-95 disabled:opacity-50 ${
-              showGrouping 
-                ? 'bg-green-500 hover:bg-green-600 text-white ring-2 ring-green-300' 
-                : 'bg-gray-200 hover:bg-gray-300 text-gray-700'
-            }`}
-            disabled={!isMyTurn}
-          >
-            {showGrouping ? '✓ Groups' : '📊 Groups'}
+            Discard
           </button>
         </div>
       </div>
 
-      {/* Groups Info */}
-      {showGrouping && groups.length > 0 && (
-        <div className="mb-3 p-2 sm:p-3 bg-green-50 border border-green-200 rounded-lg animate-fadeIn">
-          <div className="text-xs sm:text-sm font-semibold text-green-800 mb-2">
-            ✨ Detected Groups:
-          </div>
-          <div className="flex flex-wrap gap-2">
-            {groups.map((group, idx) => (
-              <span key={idx} className="px-2 py-1 bg-green-100 text-green-700 rounded text-xs font-medium">
-                {group.type === 'sequence' 
-                  ? `${group.cards.length}-card ${group.suit} sequence` 
-                  : `${group.cards.length} ${group.rank}s`}
-              </span>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {showGrouping && groups.length === 0 && (
-        <div className="mb-3 p-2 sm:p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
-          <p className="text-xs sm:text-sm text-yellow-800">
-            ℹ️ No valid groups found. You need at least 3 consecutive cards (sequence) or 3 cards of same rank (set).
-          </p>
-        </div>
-      )}
-
-      {/* Cards Display */}
-      <div className="relative">
-        <div className="flex flex-wrap gap-2 sm:gap-3 justify-center items-center min-h-[80px] sm:min-h-[100px] p-2 sm:p-3 rounded-lg bg-gradient-to-br from-gray-50 to-gray-100">
-          {cards.length === 0 ? (
-            <div className="text-center py-8 text-gray-400">
-              <p className="text-sm sm:text-base">🎴 No cards yet</p>
+      {/* Zones */}
+      <div
+        ref={containerRef}
+        className="flex justify-center items-end flex-nowrap overflow-x-auto pb-2"
+      >
+        {/* Groups */}
+        {groups.map((g) => (
+          <div key={g.id} className="flex flex-col items-center mr-8 flex-shrink-0">
+            <div className="relative flex items-end">
+              {g.items.map((card, i) => (
+                <div
+                  key={`group-${g.id}-${i}`}
+                  id={`drag-${g.id}-${i}`}
+                  onMouseDown={(e) => handleMouseDown(e, g.id, i)}
+                  className="transition-transform duration-150"
+                >
+                  <PlayingCard
+                    card={card}
+                    size="sm"
+                    selected={
+                      selectedGroup &&
+                      selectedGroup.gid === g.id &&
+                      selectedGroup.index === i
+                    }
+                    onClick={() => {
+                      setSelected(new Set());
+                      setSelectedGroup(
+                        selectedGroup &&
+                          selectedGroup.gid === g.id &&
+                          selectedGroup.index === i
+                          ? null
+                          : { gid: g.id, index: i }
+                      );
+                    }}
+                  />
+                </div>
+              ))}
             </div>
-          ) : (
-            cards.map((card, index) => (
+
+            <div className="flex items-center gap-1">
+              <div className="text-[10px] text-white bg-green-600 rounded-b-md font-semibold mt-0.5 px-3 py-[2px]">
+                {g.name}
+              </div>
+              <button
+                onClick={() => handleUngroup(g.id)}
+                className="text-[10px] text-white bg-red-600 rounded-md font-semibold mt-0.5 px-2 py-[2px] hover:bg-red-500"
+              >
+                ✕
+              </button>
+            </div>
+          </div>
+        ))}
+
+        {/* Ungrouped */}
+        <div className="flex flex-col items-center flex-shrink-0">
+          <div className="relative flex items-end">
+            {ungrouped.map((card, i) => (
               <div
-                key={`${card.rank}-${card.suit}-${index}`}
-                className="card-drop-zone"
-                data-index={index}
+                key={`ungrouped-${i}`}
+                id={`drag-ungrouped-${i}`}
+                onMouseDown={(e) => handleMouseDown(e, "ungrouped", i)}
+                className="transition-transform duration-150"
               >
                 <PlayingCard
                   card={card}
-                  selected={isCardSelected(card)}
-                  onClick={onCardSelect}
-                  disabled={!isMyTurn}
-                  grouped={isCardInGroup(card)}
-                  isDragging={draggedIndex === index || touchStartIndex === index}
-                  index={index}
-                  onDragStart={handleDragStart}
-                  onDragEnd={handleDragEnd}
-                  onDragOver={handleDragOver}
-                  onDrop={handleDrop}
-                  onTouchStart={handleTouchStart}
-                  onTouchMove={handleTouchMove}
-                  onTouchEnd={handleTouchEnd}
+                  size="sm"
+                  selected={selected.has(i)}
+                  onClick={() => toggleSelect(i)}
                 />
               </div>
-            ))
+            ))}
+          </div>
+          {ungrouped.length > 0 && (
+            <div className="text-[10px] text-white bg-gray-700 rounded-b-md font-semibold mt-0.5 px-3 py-[2px]">
+              Ungrouped
+            </div>
           )}
         </div>
       </div>
-
-      {/* Status Message */}
-      {!isMyTurn && (
-        <div className="text-center mt-3 sm:mt-4 p-2 bg-yellow-50 border border-yellow-200 rounded-lg">
-          <p className="text-xs sm:text-sm text-yellow-800 font-medium">
-            ⏳ Wait for your turn to play
-          </p>
-        </div>
-      )}
-
-      {/* Help Text */}
-      {isMyTurn && (
-        <div className="text-center mt-3 text-xs text-gray-500">
-          💡 Tap to select • Drag/swipe to reorder • Use buttons to auto-sort
-        </div>
-      )}
     </div>
   );
-};
-
-export default PlayerHand;
+}

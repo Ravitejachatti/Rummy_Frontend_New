@@ -124,6 +124,16 @@
       @apply p-4;
     }
   }
+
+  /* 🎴 Custom Rummy Table Container */
+.table-container {
+  max-width: 720px;
+  margin: 0 auto;
+  border-radius: 20px;
+  overflow: hidden;
+  background: rgba(0, 0, 0, 0.15); /* optional light dark tint */
+  box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+}
   
   /* Smooth transitions for mobile interactions */
   .card, .btn, .playing-card {
