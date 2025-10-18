@@ -41,17 +41,29 @@ function PlayingCard({ card, size = "md", selected = false, onClick }) {
 }
 
 // ---------- PlayerHand ----------
-export default function PlayerHand({ cards = [], isMyTurn = false, onDiscard }) {
+export default function PlayerHand({ cards = [], isMyTurn = false, onDiscard, onGroupsChange }) {
   const [ungrouped, setUngrouped] = useState(cards);
   const [groups, setGroups] = useState([]);
   const [selected, setSelected] = useState(new Set());
   const [selectedGroup, setSelectedGroup] = useState(null);
   const containerRef = useRef(null);
 
+  // useEffect(() => {
+  //   onGroupsChange?.({ groups, ungrouped });
+  // }, [groups, ungrouped, onGroupsChange]);
+
   useEffect(() => {
     setUngrouped(cards);
     setSelected(new Set());
   }, [cards]);
+
+  useEffect(() => {
+    const snapshot = JSON.stringify({ groups, ungrouped });
+    if (useEffect.lastSnapshot !== snapshot) {
+      onGroupsChange?.({ groups, ungrouped });
+      useEffect.lastSnapshot = snapshot;
+      }
+  }, [groups, ungrouped, onGroupsChange]);
 
   // ---------- Selection ----------
   const toggleSelect = (index) => {

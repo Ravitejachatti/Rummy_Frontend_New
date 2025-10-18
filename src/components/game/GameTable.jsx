@@ -1,5 +1,5 @@
 // client/src/components/game/GameTable.jsx
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState, useCallback } from "react";
 import { useSelector, useDispatch } from "react-redux";
 import { useParams } from "react-router-dom";
 import socketService from "../../config/socket";
@@ -39,6 +39,8 @@ const GameTable = () => {
     loading,
     error,
   } = useSelector((state) => state.game);
+
+  const [handGroups, setHandGroups] = useState({ groups: [], ungrouped: [] });
 
   const [showDeclareModal, setShowDeclareModal] = useState(false);
   const discardTop = useMemo(
@@ -118,9 +120,17 @@ const GameTable = () => {
   const handleDrop = () => currentGame && dropGame(currentGame.gameId, user.id);
   const handleDeclareWin = () => {
     if (!currentGame) return;
-    declareWinSocket(currentGame.gameId);
+    const payload = {
+    gameId: currentGame.gameId,
+    playerId: user.id,
+    groups: handGroups.groups,
+    ungrouped: handGroups.ungrouped,
+  };
+    declareWinSocket(payload);
     setShowDeclareModal(false);
   };
+
+  const handleGroupsChange = useCallback((data) => setHandGroups(data), []);
 
   // ---------------- RENDER ----------------
   if (loading)
@@ -239,11 +249,12 @@ const GameTable = () => {
             <PlayerHand
               cards={myCards}
               isMyTurn={isMyTurn}
-              onReorder={(newOrder) => {
-                dispatch(reorderMyCards(newOrder));
-                reorderCards(currentGame?.gameId, user.id, newOrder);
-              }}
+              // onReorder={(newOrder) => {
+              //   dispatch(reorderMyCards(newOrder));
+              //   reorderCards(currentGame?.gameId, user.id, newOrder);
+              // }}
               onDiscard={(card) => handleDiscardCard(card)}
+              onGroupsChange={handleGroupsChange}
             />
           </div>
         </div>

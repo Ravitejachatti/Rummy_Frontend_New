@@ -1,7 +1,7 @@
 // client/src/config/socket.js
 import { io } from 'socket.io-client';
 
-const SOCKET_URL = import.meta.env.VITE_SOCKET_URL || 'http://localhost:5001';
+const SOCKET_URL = import.meta.env.VITE_SOCKET_URL || 'https://rummy-backend-sb29.onrender.com';
 
 class SocketService {
   constructor() {

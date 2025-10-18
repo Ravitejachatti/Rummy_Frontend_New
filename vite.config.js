@@ -8,11 +8,11 @@ export default defineConfig({
     host: true,
     proxy: {
       '/api': {
-        target: 'http://localhost:5001',
+        target: 'https://rummy-backend-sb29.onrender.com',
         changeOrigin: true,
       },
       '/socket.io': {
-        target: 'http://localhost:5001',
+        target: 'https://rummy-backend-sb29.onrender.com',
         changeOrigin: true,
         ws: true,
       },

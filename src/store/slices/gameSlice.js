@@ -59,8 +59,8 @@ export const reorderCards = (gameId, playerId, newOrder) => {
 export const dropGame = (gameId, _playerId) => {
   socketService.emit('rummy/drop', { gameId });
 };
-export const declareWinSocket = (gameId, _playerId, sets) => {
-  socketService.emit('rummy/declare_win', { gameId, sets });
+export const declareWinSocket = (payload) => {
+  socketService.emit('rummy/declare_win', { payload });
 };
 
 const initialState = {
