@@ -3,13 +3,11 @@ import { createSlice, createAsyncThunk } from '@reduxjs/toolkit';
 import api from '../../config/api';
 import socketService from '../../config/socket';
 
-// Helper to read token from state (fallback to localStorage)
 const pickToken = (getState) => {
   const s = getState();
   return s?.auth?.token || localStorage.getItem('token') || '';
 };
 
-// Async thunks (attach Authorization header explicitly)
 export const getGameState = createAsyncThunk(
   'game/getGameState',
   async (tableId, { rejectWithValue, getState }) => {
@@ -42,24 +40,30 @@ export const declareWin = createAsyncThunk(
   }
 );
 
-// Socket actions (do NOT pass token here; socket handshake already has it from socketService.connect(token))
-export const joinTable = (tableId) => {
-  console.log(tableId)
+// ---- Socket actions (socket handshake already has token) ----
+export const joinTable = (tableIdOrObj) => {
+  const tableId = typeof tableIdOrObj === 'string' ? tableIdOrObj : tableIdOrObj?.tableId;
+  if (!tableId) return;
   socketService.emit('rummy/join_table', { tableId });
 };
 export const drawCard = (gameId, _playerId, source) => {
-  socketService.emit('rummy/draw_card', { gameId, source }); // source: 'drawPile' | 'discard'
+  if (!gameId || !source) return;
+  socketService.emit('rummy/draw_card', { gameId, source }); // 'drawPile' | 'discard'
 };
 export const discardCard = (gameId, _playerId, card) => {
+  if (!gameId || !card) return;
   socketService.emit('rummy/discard_card', { gameId, card });
 };
 export const reorderCards = (gameId, playerId, newOrder) => {
+  if (!gameId || !Array.isArray(newOrder)) return;
   socketService.emit('rummy/update_order', { gameId, playerId, newOrder });
 };
 export const dropGame = (gameId, _playerId) => {
+  if (!gameId) return;
   socketService.emit('rummy/drop', { gameId });
 };
 export const declareWinSocket = (payload) => {
+  // Server expects { payload }
   socketService.emit('rummy/declare_win', { payload });
 };
 
@@ -89,7 +93,7 @@ const gameSlice = createSlice({
       state.currentGame = action.payload;
     },
     setPlayers: (state, action) => {
-      state.players = action.payload;
+      state.players = action.payload || [];
     },
     setCurrentTurn: (state, action) => {
       state.currentTurn = action.payload;
@@ -106,18 +110,16 @@ const gameSlice = createSlice({
       const cardIndex = state.myCards.findIndex(
         card => card.suit === action.payload.suit && card.rank === action.payload.rank
       );
-      if (cardIndex !== -1) {
-        state.myCards.splice(cardIndex, 1);
-      }
+      if (cardIndex !== -1) state.myCards.splice(cardIndex, 1);
     },
     setDiscardPile: (state, action) => {
-      state.discardPile = action.payload;
+      state.discardPile = action.payload || [];
     },
     addToDiscardPile: (state, action) => {
-      state.discardPile.push(action.payload);
+      if (action.payload) state.discardPile.push(action.payload);
     },
     setDrawPile: (state, action) => {
-      state.drawPile = action.payload;
+      state.drawPile = action.payload || [];
     },
     toggleCardSelection: (state, action) => {
       const card = action.payload;
@@ -158,12 +160,11 @@ const gameSlice = createSlice({
       state.error = null;
     },
     reorderMyCards: (state, action) => {
-    state.myCards = action.payload || [];
-  },
+      state.myCards = action.payload || [];
+    },
   },
   extraReducers: (builder) => {
     builder
-      // Get game state
       .addCase(getGameState.pending, (state) => {
         state.loading = true;
         state.error = null;
@@ -173,13 +174,14 @@ const gameSlice = createSlice({
         state.gameState = action.payload;
         state.currentGame = action.payload;
         state.players = action.payload.players || [];
-        state.currentTurn = action.payload.currentTurn; 
-        // backend exposes only discardTop; seed local pile
+        state.currentTurn = action.payload.currentTurn;
+
+        // Seed discard pile from top only (avoid dupes)
         state.discardPile = [];
         if (action.payload.discardTop) state.discardPile.push(action.payload.discardTop);
+
         state.gameStatus = action.payload.status;
 
-        // myCards are never returned via REST; rely on rummy/your_hand events
         const currentUser = JSON.parse(localStorage.getItem('user'));
         if (currentUser) {
           state.isMyTurn = String(action.payload.currentTurn) === String(currentUser.id);
@@ -189,7 +191,6 @@ const gameSlice = createSlice({
         state.loading = false;
         state.error = action.payload;
       })
-      // Declare win
       .addCase(declareWin.pending, (state) => {
         state.loading = true;
         state.error = null;

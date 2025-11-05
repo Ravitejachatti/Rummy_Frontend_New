@@ -1,7 +1,7 @@
 // client/src/components/game/GameTable.jsx
-import React, { useEffect, useMemo, useState, useCallback } from "react";
+import React, { useEffect, useMemo, useState, useCallback, useRef } from "react";
 import { useSelector, useDispatch } from "react-redux";
-import { useParams } from "react-router-dom";
+import { useParams, useNavigate } from "react-router-dom";
 import socketService from "../../config/socket";
 import {
   setGameState,
@@ -17,8 +17,8 @@ import {
   discardCard,
   dropGame,
   declareWinSocket,
-  reorderCards,
   reorderMyCards,
+  reorderCards,
 } from "../../store/slices/gameSlice";
 import PlayerHand from "./PlayerHand";
 import LoadingSpinner from "../common/LoadingSpinner";
@@ -26,6 +26,7 @@ import ErrorMessage from "../common/ErrorMessage";
 
 const GameTable = () => {
   const dispatch = useDispatch();
+  const navigate = useNavigate();
   const { tableId } = useParams();
   const { user } = useSelector((state) => state.auth);
   const {
@@ -41,73 +42,146 @@ const GameTable = () => {
   } = useSelector((state) => state.game);
 
   const [handGroups, setHandGroups] = useState({ groups: [], ungrouped: [] });
-
   const [showDeclareModal, setShowDeclareModal] = useState(false);
+
   const discardTop = useMemo(
     () => (discardPile?.length ? discardPile[discardPile.length - 1] : null),
     [discardPile]
+  );
+  const discardTopRef = useRef(null);
+  useEffect(() => { discardTopRef.current = discardTop; }, [discardTop]);
+
+  const gameIdForNav = useCallback(
+    () => currentGame?.gameId || `GM-${String(tableId)}`,
+    [currentGame?.gameId, tableId]
   );
 
   // ---------------- SOCKET SETUP ----------------
   useEffect(() => {
     if (!tableId || !user) return;
+
+    let socket = socketService.getSocket();
+    if (!socket) {
+      const token = localStorage.getItem("token");
+      socket = socketService.connect(token);
+    }
+
+    // (Re)fetch initial state
     dispatch(getGameState(tableId));
 
-    const socket = socketService.getSocket();
-    if (!socket) return;
-    socket.removeAllListeners();
+    // Named handlers so we can cleanly unregister
+    const doJoin = () => joinTable(tableId);
 
-    socket.on("connect", () => joinTable(tableId));
-    socket.on("rummy/player_connected", () =>
-      dispatch(addNotification({ type: "info", message: "Player connected" }))
-    );
-    socket.on("rummy/player_disconnected", () =>
-      dispatch(addNotification({ type: "warning", message: "Player disconnected" }))
-    );
-    socket.on("rummy/state", (s) => {
+    const onPlayerConnected = () =>
+      dispatch(addNotification({ type: "info", message: "Player connected" }));
+
+    const onPlayerDisconnected = () =>
+      dispatch(addNotification({ type: "warning", message: "Player disconnected" }));
+
+    const onState = (s) => {
       if (s?.players) dispatch(setPlayers(s.players));
       if (typeof s?.currentTurn !== "undefined") dispatch(setCurrentTurn(s.currentTurn));
-      if (s?.discardTop) dispatch(addToDiscardPile(s.discardTop));
+      if (s?.discardTop) {
+        const prev = discardTopRef.current;
+        const changed = !prev || prev.rank !== s.discardTop.rank || prev.suit !== s.discardTop.suit;
+        if (changed) dispatch(addToDiscardPile(s.discardTop));
+      }
       if (s?.status) dispatch(setGameStatus(s.status));
-    });
-    socket.on("rummy/game_started", (data) => {
+    };
+
+    const onGameStarted = (data) => {
       dispatch(setGameState(data));
       dispatch(setGameStatus("playing"));
       dispatch(addNotification({ type: "success", message: "Game started! Good luck!" }));
-    });
-    socket.on("rummy/your_hand", ({ hand }) => dispatch(setMyCards(hand || [])));
-    socket.on("rummy/card_discarded", (data) => dispatch(addToDiscardPile(data.card)));
-    socket.on("rummy/next_turn", (data) => dispatch(setCurrentTurn(data.nextPlayerId)));
-    socket.on("rummy/player_dropped", () =>
-      dispatch(addNotification({ type: "warning", message: "Player dropped" }))
-    );
-    socket.on("rummy/win_declared", (data) => {
+    };
+
+    const onYourHand = ({ hand }) => dispatch(setMyCards(hand || []));
+    const onCardDiscarded = (data) => dispatch(addToDiscardPile(data.card));
+    const onNextTurn = (data) => dispatch(setCurrentTurn(data.nextPlayerId));
+    const onPlayerDropped = () =>
+      dispatch(addNotification({ type: "warning", message: "Player dropped" }));
+
+    const onTimedOut = ({ playerId }) =>
+      dispatch(addNotification({ type: "warning", message: `Player timed out (${playerId})` }));
+
+    const onWinDeclared = (data) => {
       dispatch(setGameStatus("ended"));
       dispatch(
         addNotification({
-          type: data.winner.toString() === user.id ? "success" : "info",
+          type: data.winner?.toString() === user.id?.toString() ? "success" : "info",
           message:
-            data.winner.toString() === user.id
+            data.winner?.toString() === user.id?.toString()
               ? "Congratulations! You won!"
               : "Game ended",
         })
       );
-    });
-    socket.on("rummy/error", (message) =>
-      dispatch(addNotification({ type: "error", message }))
-    );
+      // 👉 Navigate to Result page
+      navigate(`/rummy/result/${gameIdForNav()}`, {
+        state: {
+          winner: data.winner,
+          isYou: String(data.winner) === String(user.id),
+          losers: data.losers || [],
+          tableId,
+        },
+        replace: true,
+      });
+    };
 
-    if (!socket.connected) {
-      const token = localStorage.getItem("token");
-      socketService.connect(token);
-    }
+    const onAutoWin = (data) => {
+      dispatch(setGameStatus("ended"));
+      dispatch(
+        addNotification({
+          type: data.winner?.toString() === user.id?.toString() ? "success" : "info",
+          message:
+            data.winner?.toString() === user.id?.toString()
+              ? "Auto-win! 🎉"
+              : "Game ended (auto-win)",
+        })
+      );
+      // 👉 Navigate to Result page
+      navigate(`/rummy/result/${gameIdForNav()}`, {
+        state: {
+          winner: data.winner,
+          isYou: String(data.winner) === String(user.id),
+          losers: [],
+          tableId,
+        },
+        replace: true,
+      });
+    };
 
-    return () => socket.removeAllListeners();
-  }, [tableId, user, dispatch]);
+    const onError = (message) => dispatch(addNotification({ type: "error", message }));
+
+    // Unbind any prior handlers for these events, then bind ours
+    const events = [
+      ["connect", doJoin],
+      ["rummy/player_connected", onPlayerConnected],
+      ["rummy/player_disconnected", onPlayerDisconnected],
+      ["rummy/state", onState],
+      ["rummy/game_started", onGameStarted],
+      ["rummy/your_hand", onYourHand],
+      ["rummy/card_discarded", onCardDiscarded],
+      ["rummy/next_turn", onNextTurn],
+      ["rummy/player_dropped", onPlayerDropped],
+      ["rummy/player_timedout", onTimedOut],
+      ["rummy/win_declared", onWinDeclared],
+      ["rummy/auto_win", onAutoWin],
+      ["rummy/error", onError],
+    ];
+
+    events.forEach(([evt, fn]) => socketService.off(evt, fn));
+    if (socket.connected) doJoin();
+    events.forEach(([evt, fn]) => socketService.on(evt, fn));
+
+    return () => {
+      events.forEach(([evt, fn]) => socketService.off(evt, fn));
+    };
+  }, [tableId, user, dispatch, navigate, gameIdForNav]);
 
   // ---------------- HANDLERS ----------------
   const handleDrawCard = (source) => {
     if (!isMyTurn || !currentGame) return;
+    if (!source) return;
     drawCard(currentGame.gameId, user.id, source === "discardPile" ? "discard" : source);
   };
 
@@ -117,15 +191,16 @@ const GameTable = () => {
     discardCard(currentGame.gameId, user.id, card);
   };
 
-  const handleDrop = () => currentGame && dropGame(currentGame.gameId, user.id);
+  const handleDrop = () => currentGame && dropGame(currentGame.gameId);
+
   const handleDeclareWin = () => {
     if (!currentGame) return;
     const payload = {
-    gameId: currentGame.gameId,
-    playerId: user.id,
-    groups: handGroups.groups,
-    ungrouped: handGroups.ungrouped,
-  };
+      gameId: currentGame.gameId,
+      playerId: user.id,
+      groups: handGroups.groups,
+      ungrouped: handGroups.ungrouped,
+    };
     declareWinSocket(payload);
     setShowDeclareModal(false);
   };
@@ -249,10 +324,10 @@ const GameTable = () => {
             <PlayerHand
               cards={myCards}
               isMyTurn={isMyTurn}
-              // onReorder={(newOrder) => {
-              //   dispatch(reorderMyCards(newOrder));
-              //   reorderCards(currentGame?.gameId, user.id, newOrder);
-              // }}
+              onReorder={(newOrder) => {
+                dispatch(reorderMyCards(newOrder));
+                reorderCards(currentGame?.gameId, user.id, newOrder);
+              }}
               onDiscard={(card) => handleDiscardCard(card)}
               onGroupsChange={handleGroupsChange}
             />

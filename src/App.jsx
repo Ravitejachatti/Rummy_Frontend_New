@@ -18,6 +18,7 @@ import Leaderboard from './components/leaderboard/Leaderboard';
 
 // Notifications
 import { removeNotification } from './store/slices/gameSlice';
+import RummyResult from './components/game/Rummyresult';
 
 const ProtectedRoute = ({ children }) => {
   const { isAuthenticated } = useSelector((state) => state.auth);
@@ -152,6 +153,16 @@ function App() {
                 <Layout>
                   <Leaderboard />
                 </Layout>
+              </ProtectedRoute>
+            }
+          />
+
+
+          <Route 
+            path="/rummy/result/:gameId"
+            element={
+              <ProtectedRoute>
+                <RummyResult />
               </ProtectedRoute>
             }
           />

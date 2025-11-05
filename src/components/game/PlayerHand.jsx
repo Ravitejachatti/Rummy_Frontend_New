@@ -1,7 +1,7 @@
 // client/src/components/game/PlayerHand.jsx
 import React, { useEffect, useState, useRef } from "react";
 
-// ---------- PlayingCard ----------
+// ---------- Utils ----------
 const glyph = (s) =>
   s === "Hearts" ? "♥" : s === "Diamonds" ? "♦" : s === "Clubs" ? "♣" : "♠";
 
@@ -14,6 +14,54 @@ const SIZE_MAP = {
   lg: { w: "w-20", h: "h-28", font: "text-2xl" },
 };
 
+// Build a simple comparable key (note: we still handle duplicates by consuming indices)
+const cardKey = (c) => `${c?.rank}|${c?.suit}`;
+
+/**
+ * Reconcile incoming "cards" (authoritative server hand) with local groups:
+ *  - For each card in groups, find a matching instance in the new hand (by suit+rank),
+ *    consume it (mark used), and keep it grouped.
+ *  - If a grouped card isn't present anymore, drop it.
+ *  - All remaining unconsumed cards from the server hand go into ungrouped
+ *    (preserves server order).
+ * Works with multiple decks by "consuming" per-instance matches.
+ */
+function reconcileHandWithGroups(cards, groups) {
+  const used = new Array(cards.length).fill(false);
+
+  // Helper: find the first unused index in `cards` matching rank+suit
+  const findAndUse = (cardLike) => {
+    const key = cardKey(cardLike);
+    for (let i = 0; i < cards.length; i++) {
+      if (!used[i] && cardKey(cards[i]) === key) {
+        used[i] = true;
+        return cards[i]; // return the actual object from server hand
+      }
+    }
+    return null; // not found (discarded, etc.)
+  };
+
+  // Rebuild groups with cards that still exist; preserve group names/ids
+  const newGroups = groups.map((g) => {
+    const kept = [];
+    for (const it of g.items || []) {
+      const matched = findAndUse(it);
+      if (matched) kept.push(matched);
+      // if not matched -> that card left the hand (discarded), so drop it
+    }
+    return kept.length > 0 ? { ...g, items: kept } : null;
+  }).filter(Boolean);
+
+  // Remaining (unused) cards from the server hand become ungrouped
+  const newUngrouped = [];
+  for (let i = 0; i < cards.length; i++) {
+    if (!used[i]) newUngrouped.push(cards[i]);
+  }
+
+  return { newGroups, newUngrouped };
+}
+
+// ---------- PlayingCard ----------
 function PlayingCard({ card, size = "md", selected = false, onClick }) {
   if (!card) return null;
   const color = suitColor(card.suit);
@@ -41,29 +89,37 @@ function PlayingCard({ card, size = "md", selected = false, onClick }) {
 }
 
 // ---------- PlayerHand ----------
-export default function PlayerHand({ cards = [], isMyTurn = false, onDiscard, onGroupsChange }) {
+export default function PlayerHand({
+  cards = [],
+  isMyTurn = false,
+  onDiscard,
+  onGroupsChange,
+}) {
   const [ungrouped, setUngrouped] = useState(cards);
   const [groups, setGroups] = useState([]);
   const [selected, setSelected] = useState(new Set());
   const [selectedGroup, setSelectedGroup] = useState(null);
   const containerRef = useRef(null);
 
-  // useEffect(() => {
-  //   onGroupsChange?.({ groups, ungrouped });
-  // }, [groups, ungrouped, onGroupsChange]);
-
-  useEffect(() => {
-    setUngrouped(cards);
-    setSelected(new Set());
-  }, [cards]);
-
+  // Notify parent (GameTable) when groups/ungrouped change, dedup snapshots
+  const lastSnapshotRef = useRef("");
   useEffect(() => {
     const snapshot = JSON.stringify({ groups, ungrouped });
-    if (useEffect.lastSnapshot !== snapshot) {
+    if (lastSnapshotRef.current !== snapshot) {
       onGroupsChange?.({ groups, ungrouped });
-      useEffect.lastSnapshot = snapshot;
-      }
+      lastSnapshotRef.current = snapshot;
+    }
   }, [groups, ungrouped, onGroupsChange]);
+
+  // 🔧 CRITICAL FIX: reconcile on incoming hand changes (avoid duplicate cards in ungrouped)
+  useEffect(() => {
+    const { newGroups, newUngrouped } = reconcileHandWithGroups(cards, groups);
+    setGroups(newGroups);
+    setUngrouped(newUngrouped);
+    setSelected(new Set());
+    setSelectedGroup(null);
+  }, [cards]); // eslint-disable-line react-hooks/exhaustive-deps
+  // (We intentionally do not add `groups` as a dep to avoid infinite loops; we base on latest state)
 
   // ---------- Selection ----------
   const toggleSelect = (index) => {
@@ -83,6 +139,7 @@ export default function PlayerHand({ cards = [], isMyTurn = false, onDiscard, on
 
     const ids = Array.from(selected).sort((a, b) => a - b);
     const chosen = ids.map((i) => ungrouped[i]);
+
     const remaining = [...ungrouped];
     for (let i = ids.length - 1; i >= 0; i--) remaining.splice(ids[i], 1);
 
@@ -107,6 +164,7 @@ export default function PlayerHand({ cards = [], isMyTurn = false, onDiscard, on
     if (selected.size === 1) {
       const idx = Array.from(selected)[0];
       const card = ungrouped[idx];
+      if (!card) return;
       onDiscard?.(card);
       const next = [...ungrouped];
       next.splice(idx, 1);
@@ -141,7 +199,9 @@ export default function PlayerHand({ cards = [], isMyTurn = false, onDiscard, on
   const handleMouseMove = (e) => {
     if (!dragState.current) return;
     dragState.current.currentX = e.clientX;
-    const el = document.getElementById(`drag-${dragState.current.zone}-${dragState.current.index}`);
+    const el = document.getElementById(
+      `drag-${dragState.current.zone}-${dragState.current.index}`
+    );
     if (el) {
       el.style.position = "relative";
       el.style.zIndex = 999;
@@ -154,9 +214,11 @@ export default function PlayerHand({ cards = [], isMyTurn = false, onDiscard, on
     const { zone, index, startX, currentX } = dragState.current;
     const delta = currentX - startX;
 
-    // compute new index based on direction
-    const targetIndex =
-      Math.max(0, Math.min(getZone(zone).length - 1, index + Math.round(delta / 60)));
+    const zoneArr = getZone(zone);
+    const targetIndex = Math.max(
+      0,
+      Math.min(zoneArr.length - 1, index + Math.round(delta / 60))
+    );
 
     if (targetIndex !== index) {
       if (zone === "ungrouped") {
@@ -197,6 +259,14 @@ export default function PlayerHand({ cards = [], isMyTurn = false, onDiscard, on
     document.removeEventListener("mouseup", handleMouseUp);
   };
 
+  // Clean up document listeners if component unmounts mid-drag
+  useEffect(() => {
+    return () => {
+      document.removeEventListener("mousemove", handleMouseMove);
+      document.removeEventListener("mouseup", handleMouseUp);
+    };
+  }, []);
+
   const getZone = (zone) => {
     if (zone === "ungrouped") return ungrouped;
     const group = groups.find((g) => g.id === zone);
@@ -204,7 +274,8 @@ export default function PlayerHand({ cards = [], isMyTurn = false, onDiscard, on
   };
 
   // ---------- UI ----------
-  const totalCards = ungrouped.length + groups.reduce((a, g) => a + g.items.length, 0);
+  const totalCards =
+    ungrouped.length + groups.reduce((a, g) => a + g.items.length, 0);
 
   return (
     <div className="w-full h-full flex flex-col justify-end p-2 select-none">
