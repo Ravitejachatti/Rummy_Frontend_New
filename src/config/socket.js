@@ -5,7 +5,7 @@ const DEFAULT_URL = (typeof window !== 'undefined' && window.location)
   ? `${window.location.protocol}//${window.location.host}`
   : 'http://localhost:5001';
 
-const SOCKET_URL = import.meta.env.VITE_SOCKET_URL || DEFAULT_URL;
+const SOCKET_URL = import.meta.env.VITE_SOCKET_URL || "https://rummy-backend-sb29.onrender.com";
 
 class SocketService {
   constructor() {
