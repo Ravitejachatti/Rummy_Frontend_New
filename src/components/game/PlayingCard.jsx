@@ -1,42 +1,81 @@
-// client/src/components/game/PlayingCard.jsx
+// components/game/PlayingCard.jsx
 import React from "react";
 
-const glyph = (s) =>
-  s === "Hearts" ? "♥" : s === "Diamonds" ? "♦" : s === "Clubs" ? "♣" : "♠";
+const suitGlyph = (suit) => {
+  switch (suit) {
+    case "Hearts":   return "♥";
+    case "Diamonds": return "♦";
+    case "Clubs":    return "♣";
+    case "Spades":   return "♠";
+    default:         return "";
+  }
+};
 
-const suitColor = (s) =>
-  s === "Hearts" || s === "Diamonds" ? "text-red-600" : "text-gray-900";
-
-const SIZE_MAP = {
-  sm: { w: "w-14", h: "h-20", font: "text-lg" },   // grouped
-  md: { w: "w-16", h: "h-24", font: "text-xl" },   // for hand
-  lg: { w: "w-20", h: "h-28", font: "text-2xl" },  // if you want even larger later
+const suitColorClass = (suit) => {
+  return suit === "Hearts" || suit === "Diamonds" ? "text-red-600" : "text-black";
 };
 
 export default function PlayingCard({
   card,
-  size = "md",
+  size = "lg",        // sm | md | lg (lg = hand size)
   selected = false,
-  disabled = false,
+  onClick = () => {},
+  isMobile = false,
+  isLandscape = false,
 }) {
   if (!card) return null;
-  const color = suitColor(card.suit);
-  const sz = SIZE_MAP[size] || SIZE_MAP.md;
+
+  const sizeClasses = {
+    sm: "w-12 h-18 text-base suit-xl",   // for opponents or small areas
+    md: "w-16 h-24 text-xl suit-4xl",
+    lg: isMobile && isLandscape
+      ? "w-20 h-28 text-2xl suit-6xl"    // mobile landscape hand
+      : "w-24 h-36 text-3xl suit-8xl",  // normal hand size
+  }[size];
+
+  const [w, h, textSize, suitSize] = sizeClasses.split(" ");
 
   return (
     <div
-      className={`relative bg-white rounded-xl shadow-md border transition-all duration-150 select-none
-      ${sz.w} ${sz.h} ${color}
-      ${selected ? "ring-2 ring-amber-400 border-amber-400 scale-105" : "border-gray-200"}
-      ${disabled ? "opacity-70" : "hover:-translate-y-1"}
-      flex items-start justify-start`}
+      onClick={onClick}
+      className={`
+        relative ${w} ${h} bg-white rounded-xl shadow-2xl border-2 cursor-pointer
+        transition-all duration-200 select-none touch-none
+        ${selected 
+          ? "ring-4 ring-amber-400 ring-offset-4 ring-offset-transparent scale-110 z-20 shadow-amber-400/80" 
+          : "border-gray-300 hover:border-amber-400 hover:-translate-y-2 hover:shadow-2xl"
+        }
+        flex flex-col justify-between p-2 overflow-hidden
+      `}
     >
-      <div className="p-1">
-        <div className={`flex flex-col items-start justify-start leading-tight ${sz.font} font-bold`}>
-          <span>{card.rank}</span>
-          <span className="-mt-1">{glyph(card.suit)}</span>
-        </div>
+      {/* Top left corner */}
+      <div className={`flex flex-col items-start ${textSize} font-bold ${suitColorClass(card.suit)}`}>
+        <span className="leading-none">{card.rank}</span>
+        <span className={`${suitSize} leading-none -mt-1`}>{suitGlyph(card.suit)}</span>
       </div>
+
+      {/* Center big suit (only on large cards) */}
+      {size === "lg" && (
+        <div className={`absolute inset-0 flex items-center justify-center pointer-events-none ${suitColorClass(card.suit)}`}>
+          <span className="text-8xl md:text-9xl lg:text-[10rem] opacity-10">
+            {suitGlyph(card.suit)}
+          </span>
+        </div>
+      )}
+
+      {/* Bottom right corner (mirrored) */}
+      <div className={`flex flex-col items-end rotate-180 ${textSize} font-bold ${suitColorClass(card.suit)}`}>
+        <span className="leading-none">{card.rank}</span>
+        <span className={`${suitSize} leading-none -mt-1`}>{suitGlyph(card.suit)}</span>
+      </div>
+
+      {/* Subtle shine overlay */}
+      <div className="absolute inset-0 bg-gradient-to-br from-white/50 via-transparent to-transparent rounded-xl pointer-events-none" />
+      
+      {/* Golden glow when selected */}
+      {selected && (
+        <div className="absolute inset-0 rounded-xl bg-gradient-to-br from-amber-400/20 animate-pulse pointer-events-none" />
+      )}
     </div>
   );
 }

@@ -7,6 +7,7 @@ export const getBalance = createAsyncThunk(
   async (_, { rejectWithValue }) => {
     try {
       const response = await api.get('/api/wallet/balance');
+      console.log('Balance response:', response);
       return response.data.balance;
     } catch (error) {
       return rejectWithValue(error.response?.data?.error || 'Failed to get balance');

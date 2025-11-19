@@ -66,10 +66,8 @@ const GameTable = () => {
       socket = socketService.connect(token);
     }
 
-    // (Re)fetch initial state
     dispatch(getGameState(tableId));
 
-    // Named handlers so we can cleanly unregister
     const doJoin = () => joinTable(tableId);
 
     const onPlayerConnected = () =>
@@ -115,7 +113,6 @@ const GameTable = () => {
               : "Game ended",
         })
       );
-      // 👉 Navigate to Result page
       navigate(`/rummy/result/${gameIdForNav()}`, {
         state: {
           winner: data.winner,
@@ -138,7 +135,6 @@ const GameTable = () => {
               : "Game ended (auto-win)",
         })
       );
-      // 👉 Navigate to Result page
       navigate(`/rummy/result/${gameIdForNav()}`, {
         state: {
           winner: data.winner,
@@ -152,7 +148,6 @@ const GameTable = () => {
 
     const onError = (message) => dispatch(addNotification({ type: "error", message }));
 
-    // Unbind any prior handlers for these events, then bind ours
     const events = [
       ["connect", doJoin],
       ["rummy/player_connected", onPlayerConnected],
@@ -222,105 +217,119 @@ const GameTable = () => {
     );
 
   return (
-    <div className="min-h-screen w-full bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-green-900 via-green-950 to-black text-white select-none">
-      <div className="mx-auto flex items-center justify-center p-2 sm:p-4 md:p-6 h-screen">
-        <div className="relative w-full aspect-[9/16] sm:aspect-[10/16] md:aspect-[16/9] md:max-w-[900px] rounded-3xl shadow-[0_0_60px_-10px_rgba(0,0,0,0.6)] overflow-hidden border border-white/10">
-
-          {/* ---------- HEADER ---------- */}
-          <div className="px-3 py-2 bg-neutral-950/60 border-b border-white/10 flex items-center justify-between">
-            <div>
-              <h1 className="text-lg sm:text-xl font-semibold">Rummy Table</h1>
-              <p className="text-xs sm:text-sm text-white/70">
-                Status: <span className="capitalize">{gameStatus}</span>
-                {currentTurn && (
-                  <>
-                    {" "}
-                    • Turn:{" "}
-                    <span className="font-medium">
-                      {String(currentTurn) === String(user.id) ? "You" : "Opponent"}
-                    </span>
-                  </>
-                )}
-              </p>
-            </div>
-            <div className="flex items-center gap-2">
-              {gameStatus === "playing" && (
+    <div className="min-h-screen w-full bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-green-900 via-green-950 to-black text-white select-none overflow-hidden">
+      {/* Mobile Landscape: Full screen layout */}
+      <div className="h-screen w-full flex flex-col">
+        
+        {/* ---------- COMPACT HEADER ---------- */}
+        <div className="px-2 py-1 bg-neutral-950/70 border-b border-white/10 flex items-center justify-between flex-shrink-0">
+          <div className="flex items-center gap-2">
+            <h1 className="text-sm font-semibold">Rummy</h1>
+            <div className="text-[10px] text-white/60">
+              <span className="capitalize">{gameStatus}</span>
+              {currentTurn && (
                 <>
-                  <button
-                    onClick={handleDrop}
-                    className="px-3 py-1.5 rounded bg-red-500 hover:bg-red-400 text-white text-sm"
-                  >
-                    Drop
-                  </button>
-                  <button
-                    onClick={() => setShowDeclareModal(true)}
-                    disabled={!isMyTurn}
-                    className="px-3 py-1.5 rounded bg-emerald-500 hover:bg-emerald-400 disabled:opacity-50 text-black text-sm"
-                  >
-                    Declare
-                  </button>
+                  {" • "}
+                  <span className={isMyTurn ? "text-green-400 font-medium" : ""}>
+                    {String(currentTurn) === String(user.id) ? "Your Turn" : "Wait"}
+                  </span>
                 </>
               )}
             </div>
           </div>
+          <div className="flex items-center gap-1">
+            {gameStatus === "playing" && (
+              <>
+                <button
+                  onClick={handleDrop}
+                  className="px-2 py-0.5 rounded bg-red-500 hover:bg-red-400 active:scale-95 text-white text-[10px] font-medium"
+                >
+                  Drop
+                </button>
+                <button
+                  onClick={() => setShowDeclareModal(true)}
+                  disabled={!isMyTurn}
+                  className="px-2 py-0.5 rounded bg-emerald-500 hover:bg-emerald-400 active:scale-95 disabled:opacity-50 text-black text-[10px] font-semibold"
+                >
+                  Declare
+                </button>
+              </>
+            )}
+          </div>
+        </div>
 
-          {/* ---------- TABLE AREA ---------- */}
-          <div className="relative h-[65%] sm:h-[64%] md:h-[68%] bg-[url('https://images.unsplash.com/photo-1521207418485-99c705420785?q=80&w=1600&auto=format&fit=crop')] bg-center bg-cover select-none">
-            <div className="absolute inset-0 bg-emerald-900/70 backdrop-blur-[1px]" />
-            <div className="relative z-10 h-full flex flex-col items-center justify-center gap-6">
-              <div className="text-sm uppercase tracking-[0.2em] text-emerald-200/80">
-                Play Area
-              </div>
-
-              {/* DRAW / DISCARD PILES */}
-              <div className="flex items-end gap-10">
+        {/* ---------- MAIN PLAY AREA ---------- */}
+        <div className="flex-1 flex flex-col min-h-0">
+          
+          {/* Table Area - Takes remaining space above hand */}
+          <div className="flex-1 relative bg-[url('https://images.unsplash.com/photo-1521207418485-99c705420785?q=80&w=1600&auto=format&fit=crop')] bg-center bg-cover">
+            <div className="absolute inset-0 bg-emerald-900/75 backdrop-blur-[1px]" />
+            
+            <div className="relative z-10 h-full flex items-center justify-center">
+              {/* Center piles horizontally */}
+              <div className="flex items-center gap-6">
+                
                 {/* Draw Pile */}
                 <div className="text-center">
                   <div
                     onClick={() => handleDrawCard("drawPile")}
-                    className={`w-14 h-20 md:w-16 md:h-24 rounded-xl border border-emerald-700 bg-emerald-800 shadow-xl ${
+                    className={`w-11 h-16 rounded-lg border-2 border-emerald-700 bg-emerald-800 shadow-lg ${
                       isMyTurn
-                        ? "cursor-pointer hover:scale-105 transition-transform"
-                        : "opacity-60 cursor-not-allowed"
+                        ? "cursor-pointer hover:scale-105 active:scale-110 transition-transform"
+                        : "opacity-50 cursor-not-allowed"
                     }`}
-                    title={isMyTurn ? "Draw from closed pile" : "Wait for your turn"}
+                    title={isMyTurn ? "Draw" : "Wait"}
                   />
-                  <p className="mt-2 text-xs text-emerald-200/80">Closed Pile</p>
+                  <p className="mt-1 text-[9px] text-emerald-200/80 font-medium">Draw Pile</p>
+                </div>
+
+                {/* Status indicator */}
+                <div className="text-center px-3">
+                  <div className="text-[10px] uppercase tracking-wider text-emerald-300/70 mb-1">
+                    {isMyTurn ? "Your Turn" : "Wait"}
+                  </div>
+                  <div className={`w-2 h-2 rounded-full mx-auto ${
+                    isMyTurn ? "bg-green-400 animate-pulse" : "bg-gray-500"
+                  }`} />
                 </div>
 
                 {/* Discard Pile */}
                 <div className="text-center">
                   <div
                     onClick={() => handleDrawCard("discard")}
-                    className={`w-14 h-20 md:w-16 md:h-24 rounded-xl border border-gray-200 bg-white shadow-xl flex items-center justify-center ${
+                    className={`w-11 h-16 rounded-lg border-2 border-gray-200 bg-white shadow-lg flex items-center justify-center ${
                       isMyTurn
-                        ? "cursor-pointer hover:scale-105 transition-transform"
-                        : "opacity-60 cursor-not-allowed"
+                        ? "cursor-pointer hover:scale-105 active:scale-110 transition-transform"
+                        : "opacity-50 cursor-not-allowed"
                     }`}
-                    title={isMyTurn ? "Pick from discard" : "Wait for your turn"}
+                    title={isMyTurn ? "Pick discard" : "Wait"}
                   >
                     {discardTop ? (
-                      <div className="w-full h-full flex items-center justify-center text-gray-900 text-xl">
-                        {discardTop.rank}
-                        {suitGlyph(discardTop.suit)}
+                      <div className="flex flex-col items-center justify-center text-gray-900">
+                        <span className="text-base font-bold leading-none">{discardTop.rank}</span>
+                        <span className={`text-lg leading-none ${
+                          discardTop.suit === "Hearts" || discardTop.suit === "Diamonds"
+                            ? "text-red-600"
+                            : "text-gray-900"
+                        }`}>
+                          {suitGlyph(discardTop.suit)}
+                        </span>
                       </div>
                     ) : (
-                      <span className="text-xs text-gray-400">EMPTY</span>
+                      <span className="text-[9px] text-gray-400 font-medium">Empty</span>
                     )}
                   </div>
-                  <p className="mt-2 text-xs text-emerald-200/80">Discard</p>
+                  <p className="mt-1 text-[9px] text-emerald-200/80 font-medium">Discard</p>
                 </div>
               </div>
-
-              <div className="text-xs text-emerald-200/80">
-                {isMyTurn ? "Your turn — draw then discard" : "Waiting for opponent…"}
-              </div>
             </div>
-            <div className="absolute inset-0 pointer-events-none bg-[radial-gradient(circle_at_center,transparent_40%,rgba(0,0,0,0.55)_100%)]" />
+            
+            {/* Vignette */}
+            <div className="absolute inset-0 pointer-events-none bg-[radial-gradient(circle_at_center,transparent_35%,rgba(0,0,0,0.4)_100%)]" />
           </div>
 
-          {/* ---------- PLAYER HAND ---------- */}
-          <div className="absolute bottom-0 left-0 right-0 z-20 h-[35%] sm:h-[34%] md:h-[32%] bg-black/20 backdrop-blur-sm border-t border-white/10">
+          {/* ---------- PLAYER HAND (Fixed Height) ---------- */}
+          <div className="h-[140px]  bg-gradient-to-t from-black/40 to-transparent backdrop-blur-sm border-t border-white/10 flex-shrink-0">
             <PlayerHand
               cards={myCards}
               isMyTurn={isMyTurn}
@@ -337,22 +346,22 @@ const GameTable = () => {
 
       {/* ---------- DECLARE MODAL ---------- */}
       {showDeclareModal && (
-        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-xl p-5 max-w-md w-full">
-            <h3 className="text-lg font-bold mb-2">Declare Win</h3>
-            <p className="text-gray-600 mb-4 text-sm">
+        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-3">
+          <div className="bg-white rounded-xl p-4 max-w-sm w-full">
+            <h3 className="text-base font-bold mb-2 text-gray-900">Declare Win</h3>
+            <p className="text-gray-600 mb-3 text-xs">
               Are you sure you want to declare? We will validate your sequences.
             </p>
-            <div className="flex flex-col sm:flex-row gap-2">
+            <div className="flex gap-2">
               <button
                 onClick={handleDeclareWin}
-                className="flex-1 px-3 py-2 rounded bg-emerald-500 text-black font-semibold hover:bg-emerald-400"
+                className="flex-1 px-3 py-2 rounded-lg bg-emerald-500 text-black font-semibold hover:bg-emerald-400 active:scale-95 text-sm"
               >
                 Declare
               </button>
               <button
                 onClick={() => setShowDeclareModal(false)}
-                className="flex-1 px-3 py-2 rounded bg-neutral-200 text-neutral-900 hover:bg-neutral-300"
+                className="flex-1 px-3 py-2 rounded-lg bg-neutral-200 text-neutral-900 hover:bg-neutral-300 active:scale-95 text-sm font-medium"
               >
                 Cancel
               </button>
