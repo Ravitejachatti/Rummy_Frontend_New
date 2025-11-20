@@ -1,5 +1,6 @@
 // client/src/components/game/PlayerHand.jsx
 import React, { useEffect, useState, useRef } from "react";
+import { getCardImage } from "../utils/cardimages";
 
 // ---------- Utils ----------
 const glyph = (s) =>
@@ -52,35 +53,48 @@ function reconcileHandWithGroups(cards, groups) {
   }
 
   return { newGroups, newUngrouped };
+
 }
 
 // ---------- PlayingCard ----------
 function PlayingCard({ card, size = "sm", selected = false, onClick }) {
   if (!card) return null;
-  const color = suitColor(card.suit);
   const sz = SIZE_MAP[size] || SIZE_MAP.sm;
+  const imgSrc = getCardImage(card);
 
   return (
     <div
       onClick={onClick}
       className={`relative bg-white rounded-lg shadow-md border transition-all duration-150 select-none cursor-pointer
-        ${sz.w} ${sz.h} ${color}
+        ${sz.w} ${sz.h}
         ${
           selected
             ? "ring-2 ring-amber-400 border-amber-400 scale-105"
             : "border-gray-200"
         }
         hover:-translate-y-1
-        flex items-start justify-start`}
+        flex items-center justify-center overflow-hidden`}
     >
-      <div className="p-0.5">
-        <div
-          className={`flex flex-col items-start justify-start leading-none ${sz.font} font-bold`}
-        >
-          <span>{card.rank}</span>
-          <span className="-mt-0.5">{glyph(card.suit)}</span>
+      {imgSrc ? (
+        <img
+          src={imgSrc}
+          alt={`${card.rank} of ${card.suit}`}
+          className="w-full h-full object-contain"
+          draggable={false}
+        />
+      ) : (
+        // Fallback to old text style if image not found
+        <div className="p-0.5">
+          <div
+            className={`flex flex-col items-start justify-start leading-none ${
+              sz.font
+            } font-bold ${suitColor(card.suit)}`}
+          >
+            <span>{card.rank}</span>
+            <span className="-mt-0.5">{glyph(card.suit)}</span>
+          </div>
         </div>
-      </div>
+      )}
     </div>
   );
 }
@@ -97,6 +111,13 @@ export default function PlayerHand({
   const [selected, setSelected] = useState(new Set());
   const [selectedGroup, setSelectedGroup] = useState(null);
   const containerRef = useRef(null);
+
+
+  useEffect(() => {
+  if (cards[0]) {
+    console.log("Example card:", cards[0], getCardImage(cards[0]));
+  }
+}, [cards]);
 
   // Notify parent when groups/ungrouped change
   const lastSnapshotRef = useRef("");

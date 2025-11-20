@@ -9,6 +9,8 @@ import {
   setCurrentTurn,
   setMyCards,
   addToDiscardPile,
+  setDiscardPile,
+  setDrawPile,
   setGameStatus,
   addNotification,
   getGameState,
@@ -23,6 +25,7 @@ import {
 import PlayerHand from "./PlayerHand";
 import LoadingSpinner from "../common/LoadingSpinner";
 import ErrorMessage from "../common/ErrorMessage";
+import { getCardImage } from "../utils/cardimages";
 
 const GameTable = () => {
   const dispatch = useDispatch();
@@ -35,6 +38,7 @@ const GameTable = () => {
     currentTurn,
     myCards,
     discardPile,
+    drawPile,
     gameStatus,
     isMyTurn,
     loading,
@@ -49,7 +53,15 @@ const GameTable = () => {
     [discardPile]
   );
   const discardTopRef = useRef(null);
-  useEffect(() => { discardTopRef.current = discardTop; }, [discardTop]);
+  useEffect(() => {
+    discardTopRef.current = discardTop;
+  }, [discardTop]);
+
+  // 👇 Top 10 draw cards (already coming sliced from backend, but slice for safety)
+  const visibleDrawPile = useMemo(
+    () => (Array.isArray(drawPile) ? drawPile.slice(-10) : []),
+    [drawPile]
+  );
 
   const gameIdForNav = useCallback(
     () => currentGame?.gameId || `GM-${String(tableId)}`,
@@ -77,13 +89,19 @@ const GameTable = () => {
       dispatch(addNotification({ type: "warning", message: "Player disconnected" }));
 
     const onState = (s) => {
+      // Initial / sync state from server
       if (s?.players) dispatch(setPlayers(s.players));
       if (typeof s?.currentTurn !== "undefined") dispatch(setCurrentTurn(s.currentTurn));
+
       if (s?.discardTop) {
-        const prev = discardTopRef.current;
-        const changed = !prev || prev.rank !== s.discardTop.rank || prev.suit !== s.discardTop.suit;
-        if (changed) dispatch(addToDiscardPile(s.discardTop));
+        dispatch(setDiscardPile([s.discardTop]));
       }
+
+      if (Array.isArray(s.drawPileTop)) {
+        console.log("[SOCKET] rummy/state drawPileTop:", s.drawPileTop);
+        dispatch(setDrawPile(s.drawPileTop));
+      }
+
       if (s?.status) dispatch(setGameStatus(s.status));
     };
 
@@ -94,7 +112,23 @@ const GameTable = () => {
     };
 
     const onYourHand = ({ hand }) => dispatch(setMyCards(hand || []));
-    const onCardDiscarded = (data) => dispatch(addToDiscardPile(data.card));
+
+    const onCardDrawn = (data) => {
+      // When anyone draws, server sends updated drawPileTop
+      if (Array.isArray(data.drawPileTop)) {
+        console.log("[SOCKET] rummy/card_drawn drawPileTop:", data.drawPileTop);
+        dispatch(setDrawPile(data.drawPileTop));
+      }
+    };
+
+    const onCardDiscarded = (data) => {
+      if (data.discardTop) {
+        dispatch(setDiscardPile([data.discardTop]));
+      } else if (data.card) {
+        dispatch(addToDiscardPile(data.card));
+      }
+    };
+
     const onNextTurn = (data) => dispatch(setCurrentTurn(data.nextPlayerId));
     const onPlayerDropped = () =>
       dispatch(addNotification({ type: "warning", message: "Player dropped" }));
@@ -155,6 +189,7 @@ const GameTable = () => {
       ["rummy/state", onState],
       ["rummy/game_started", onGameStarted],
       ["rummy/your_hand", onYourHand],
+      ["rummy/card_drawn", onCardDrawn],       // 👈 NEW
       ["rummy/card_discarded", onCardDiscarded],
       ["rummy/next_turn", onNextTurn],
       ["rummy/player_dropped", onPlayerDropped],
@@ -218,10 +253,8 @@ const GameTable = () => {
 
   return (
     <div className="min-h-screen w-full bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-green-900 via-green-950 to-black text-white select-none overflow-hidden">
-      {/* Mobile Landscape: Full screen layout */}
       <div className="h-screen w-full flex flex-col">
-        
-        {/* ---------- COMPACT HEADER ---------- */}
+        {/* HEADER */}
         <div className="px-2 py-1 bg-neutral-950/70 border-b border-white/10 flex items-center justify-between flex-shrink-0">
           <div className="flex items-center gap-2">
             <h1 className="text-sm font-semibold">Rummy</h1>
@@ -258,42 +291,73 @@ const GameTable = () => {
           </div>
         </div>
 
-        {/* ---------- MAIN PLAY AREA ---------- */}
+        {/* MAIN AREA */}
         <div className="flex-1 flex flex-col min-h-0">
-          
-          {/* Table Area - Takes remaining space above hand */}
           <div className="flex-1 relative bg-[url('https://images.unsplash.com/photo-1521207418485-99c705420785?q=80&w=1600&auto=format&fit=crop')] bg-center bg-cover">
             <div className="absolute inset-0 bg-emerald-900/75 backdrop-blur-[1px]" />
-            
+
             <div className="relative z-10 h-full flex items-center justify-center">
-              {/* Center piles horizontally */}
               <div className="flex items-center gap-6">
-                
-                {/* Draw Pile */}
+                {/* DRAW PILE with TOP 10 visible */}
                 <div className="text-center">
                   <div
                     onClick={() => handleDrawCard("drawPile")}
-                    className={`w-11 h-16 rounded-lg border-2 border-emerald-700 bg-emerald-800 shadow-lg ${
+                    className={`relative w-24 h-20 rounded-lg border-2 border-emerald-700 bg-emerald-900/80 shadow-lg flex items-center justify-center overflow-hidden ${
                       isMyTurn
                         ? "cursor-pointer hover:scale-105 active:scale-110 transition-transform"
                         : "opacity-50 cursor-not-allowed"
                     }`}
                     title={isMyTurn ? "Draw" : "Wait"}
-                  />
+                  >
+                    {visibleDrawPile.length ? (
+                      <div className="flex -space-x-5">
+                        {visibleDrawPile.map((card, idx) => {
+                          const imgSrc = getCardImage(card);
+                          const key = `${card.rank}-${card.suit}-${idx}`;
+                          return (
+                            <div
+                              key={key}
+                              className="w-8 h-12 rounded-md border border-emerald-700 bg-emerald-800 shadow-md overflow-hidden"
+                            >
+                              {imgSrc ? (
+                                <img
+                                  src={imgSrc}
+                                  alt={`${card.rank} of ${card.suit}`}
+                                  className="w-full h-full object-cover"
+                                  draggable={false}
+                                />
+                              ) : (
+                                <div className="flex flex-col items-center justify-center text-xs text-emerald-100">
+                                  <span className="font-bold">{card.rank}</span>
+                                  <span>{suitGlyph(card.suit)}</span>
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    ) : (
+                      <span className="text-[9px] text-emerald-100 font-medium">
+                        No cards
+                      </span>
+                    )}
+                  </div>
                   <p className="mt-1 text-[9px] text-emerald-200/80 font-medium">Draw Pile</p>
                 </div>
 
-                {/* Status indicator */}
+                {/* STATUS DOT */}
                 <div className="text-center px-3">
                   <div className="text-[10px] uppercase tracking-wider text-emerald-300/70 mb-1">
                     {isMyTurn ? "Your Turn" : "Wait"}
                   </div>
-                  <div className={`w-2 h-2 rounded-full mx-auto ${
-                    isMyTurn ? "bg-green-400 animate-pulse" : "bg-gray-500"
-                  }`} />
+                  <div
+                    className={`w-2 h-2 rounded-full mx-auto ${
+                      isMyTurn ? "bg-green-400 animate-pulse" : "bg-gray-500"
+                    }`}
+                  />
                 </div>
 
-                {/* Discard Pile */}
+                {/* DISCARD PILE (only top card) */}
                 <div className="text-center">
                   <div
                     onClick={() => handleDrawCard("discard")}
@@ -305,16 +369,32 @@ const GameTable = () => {
                     title={isMyTurn ? "Pick discard" : "Wait"}
                   >
                     {discardTop ? (
-                      <div className="flex flex-col items-center justify-center text-gray-900">
-                        <span className="text-base font-bold leading-none">{discardTop.rank}</span>
-                        <span className={`text-lg leading-none ${
-                          discardTop.suit === "Hearts" || discardTop.suit === "Diamonds"
-                            ? "text-red-600"
-                            : "text-gray-900"
-                        }`}>
-                          {suitGlyph(discardTop.suit)}
-                        </span>
-                      </div>
+                      (() => {
+                        const imgSrc = getCardImage(discardTop);
+                        return imgSrc ? (
+                          <img
+                            src={imgSrc}
+                            alt={`${discardTop.rank} of ${discardTop.suit}`}
+                            className="w-full h-full object-contain rounded-md"
+                            draggable={false}
+                          />
+                        ) : (
+                          <div className="flex flex-col items-center justify-center text-gray-900">
+                            <span className="text-base font-bold leading-none">
+                              {discardTop.rank}
+                            </span>
+                            <span
+                              className={`text-lg leading-none ${
+                                discardTop.suit === "Hearts" || discardTop.suit === "Diamonds"
+                                  ? "text-red-600"
+                                  : "text-gray-900"
+                              }`}
+                            >
+                              {suitGlyph(discardTop.suit)}
+                            </span>
+                          </div>
+                        );
+                      })()
                     ) : (
                       <span className="text-[9px] text-gray-400 font-medium">Empty</span>
                     )}
@@ -323,13 +403,12 @@ const GameTable = () => {
                 </div>
               </div>
             </div>
-            
-            {/* Vignette */}
+
             <div className="absolute inset-0 pointer-events-none bg-[radial-gradient(circle_at_center,transparent_35%,rgba(0,0,0,0.4)_100%)]" />
           </div>
 
-          {/* ---------- PLAYER HAND (Fixed Height) ---------- */}
-          <div className="h-[140px]  bg-gradient-to-t from-black/40 to-transparent backdrop-blur-sm border-t border-white/10 flex-shrink-0">
+          {/* PLAYER HAND */}
+          <div className="h-[140px] bg-gradient-to-t from-black/40 to-transparent backdrop-blur-sm border-t border-white/10 flex-shrink-0">
             <PlayerHand
               cards={myCards}
               isMyTurn={isMyTurn}
@@ -344,7 +423,7 @@ const GameTable = () => {
         </div>
       </div>
 
-      {/* ---------- DECLARE MODAL ---------- */}
+      {/* DECLARE MODAL */}
       {showDeclareModal && (
         <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-3">
           <div className="bg-white rounded-xl p-4 max-w-sm w-full">

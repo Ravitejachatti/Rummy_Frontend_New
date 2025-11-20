@@ -1,12 +1,19 @@
 // client/src/pages/Lobby.jsx
-import React, { useEffect, useMemo, useState } from 'react';
-import { useDispatch, useSelector } from 'react-redux';
-import { useNavigate, useParams, Link } from 'react-router-dom';
-import socketService from '../config/socket';
-import { fetchTables } from '../store/slices/tableSlice';
-import { getGameState, joinTable, setPlayers, setCurrentTurn, addNotification, setGameStatus } from '../store/slices/gameSlice';
-import LoadingSpinner from '../components/common/LoadingSpinner';
-import ErrorMessage from '../components/common/ErrorMessage';
+import React, { useEffect, useMemo, useState } from "react";
+import { useDispatch, useSelector } from "react-redux";
+import { useNavigate, useParams, Link } from "react-router-dom";
+import socketService from "../config/socket";
+import { fetchTables } from "../store/slices/tableSlice";
+import {
+  getGameState,
+  joinTable,
+  setPlayers,
+  setCurrentTurn,
+  addNotification,
+  setGameStatus,
+} from "../store/slices/gameSlice";
+import LoadingSpinner from "../components/common/LoadingSpinner";
+import ErrorMessage from "../components/common/ErrorMessage";
 
 export default function Lobby() {
   const { tableId } = useParams();
@@ -14,79 +21,113 @@ export default function Lobby() {
   const dispatch = useDispatch();
 
   const { user } = useSelector((s) => s.auth);
-  const { tables, loading: tablesLoading, error: tablesError } = useSelector((s) => s.table);
-  const { players, currentTurn, gameStatus } = useSelector((s) => s.game);
+  const {
+    tables = [],
+    loading: tablesLoading,
+    error: tablesError,
+  } = useSelector((s) => s.table);
+  const { players = [], currentTurn, gameStatus } = useSelector((s) => s.game);
 
   const [joining, setJoining] = useState(true);
 
-  // Pull current table info (minPlayers, name, etc.)
+  // Ensure we have tables to show table details
   useEffect(() => {
     if (!tables || tables.length === 0) {
       dispatch(fetchTables());
     }
   }, [dispatch, tables?.length]);
 
-  const table = useMemo(() => tables.find((t) => String(t._id) === String(tableId)), [tables, tableId]);
+  const table = useMemo(
+    () =>
+      tables.find((t) => String(t._id) === String(tableId)) || null,
+    [tables, tableId]
+  );
 
   useEffect(() => {
     if (!tableId || !user) return;
 
-    // Join table room now; server will put us in the room and start game when minPlayers are met.
-   // Ensure socket is connected (or queued emits will still be flushed, but this avoids warnings)
-   (async () => {
-     const token = localStorage.getItem('token');
-     // connect() is idempotent; safe to call
-     socketService.connect(token);
-     await socketService.waitUntilConnected();
-     joinTable(tableId);
-  })();
+    let cancelled = false;
 
-    // Pull masked state to show current players already in the room (if any)
-    dispatch(getGameState(tableId)).finally(() => setJoining(false));
+    (async () => {
+      try {
+        const token = localStorage.getItem("token") || "";
+        socketService.connect(token);
+        if (socketService.waitUntilConnected) {
+          await socketService.waitUntilConnected();
+        }
+        if (cancelled) return;
+
+        joinTable(tableId);
+        await dispatch(getGameState(tableId));
+      } catch (err) {
+        console.error("[Lobby] socket/join error:", err);
+        dispatch(
+          addNotification({
+            type: "error",
+            message: "Failed to join lobby. Please try again.",
+          })
+        );
+      } finally {
+        if (!cancelled) setJoining(false);
+      }
+    })();
 
     const socket = socketService.getSocket();
-    if (!socket) return;
+    if (!socket) {
+      setJoining(false);
+      return;
+    }
 
-    // Presence
-    const onPlayerConnected = (payload) => {
-      dispatch(addNotification({ type: 'info', message: 'A player connected' }));
-      // We’ll re-query state via state event below
+    const onPlayerConnected = () => {
+      dispatch(
+        addNotification({ type: "info", message: "A player connected" })
+      );
     };
+
     const onPlayerDisconnected = () => {
-      dispatch(addNotification({ type: 'warning', message: 'A player disconnected' }));
+      dispatch(
+        addNotification({
+          type: "warning",
+          message: "A player disconnected",
+        })
+      );
     };
 
-    // Masked state updates before the game starts
     const onState = (s) => {
       if (Array.isArray(s?.players)) dispatch(setPlayers(s.players));
-      if (typeof s?.currentTurn !== 'undefined') dispatch(setCurrentTurn(s.currentTurn));
-      if (s?.status) dispatch(setGameStatus(s.status)); // ✅ sync lobby status
-      if (s?.status === 'playing') {
+      if (typeof s?.currentTurn !== "undefined")
+        dispatch(setCurrentTurn(s.currentTurn));
+      if (s?.status) dispatch(setGameStatus(s.status));
+
+      if (s?.status === "playing") {
         navigate(`/game/${tableId}`, { replace: true });
       }
     };
 
-    // When the server starts the game, move to the game page
     const onGameStarted = () => {
       navigate(`/game/${tableId}`, { replace: true });
     };
 
-    socket.on('rummy/player_connected', onPlayerConnected);
-    socket.on('rummy/player_disconnected', onPlayerDisconnected);
-    socket.on('rummy/state', onState);
-    socket.on('rummy/game_started', onGameStarted);
+    socket.on("rummy/player_connected", onPlayerConnected);
+    socket.on("rummy/player_disconnected", onPlayerDisconnected);
+    socket.on("rummy/state", onState);
+    socket.on("rummy/game_started", onGameStarted);
 
     return () => {
-      socket.off('rummy/player_connected', onPlayerConnected);
-      socket.off('rummy/player_disconnected', onPlayerDisconnected);
-      socket.off('rummy/state', onState);
-      socket.off('rummy/game_started', onGameStarted);
+      cancelled = true;
+      if (!socket) return;
+      socket.off("rummy/player_connected", onPlayerConnected);
+      socket.off("rummy/player_disconnected", onPlayerDisconnected);
+      socket.off("rummy/state", onState);
+      socket.off("rummy/game_started", onGameStarted);
     };
   }, [dispatch, navigate, tableId, user]);
 
-  if (tablesLoading || joining) {
+  const isLoading = tablesLoading || joining;
+
+  if (isLoading) {
     return (
-      <div className="min-h-screen flex items-center justify-center">
+      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-800 to-slate-900">
         <LoadingSpinner size="xl" />
       </div>
     );
@@ -94,78 +135,128 @@ export default function Lobby() {
 
   if (tablesError) {
     return (
-      <div className="min-h-screen flex items-center justify-center">
-        <ErrorMessage message={tablesError} onRetry={() => dispatch(fetchTables())} />
+      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-800 to-slate-900 p-4">
+        <div className="max-w-md w-full">
+          <ErrorMessage
+            message={tablesError}
+            onRetry={() => dispatch(fetchTables())}
+          />
+        </div>
       </div>
     );
   }
 
+  const minPlayers = table?.minPlayers ?? 2;
+  const maxPlayers = table?.maxPlayers ?? 6;
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-800 to-slate-900 p-4">
       <div className="max-w-3xl mx-auto">
-        <div className="bg-white rounded-lg shadow-lg p-4 sm:p-6">
-          <div className="flex items-start justify-between">
+        <div className="bg-white rounded-2xl shadow-lg p-4 sm:p-6">
+          {/* Header */}
+          <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
             <div>
               <h1 className="text-2xl font-bold text-gray-900">Lobby</h1>
-              <p className="text-gray-600 mt-1">
+              <p className="text-gray-600 mt-1 text-sm">
                 {table ? (
                   <>
-                    Waiting for players to join <span className="font-medium">{table.name}</span>.
-                    {` `}
-                    Need at least <span className="font-medium">{table.minPlayers}</span> players to start.
+                    Waiting for players to join{" "}
+                    <span className="font-medium">{table.name}</span>. Need at
+                    least{" "}
+                    <span className="font-medium">{minPlayers}</span> players to
+                    start.
                   </>
                 ) : (
-                  <>Waiting for players…</>
+                  <>
+                    This table might have been closed or is not available
+                    anymore.
+                  </>
                 )}
               </p>
             </div>
-            <Link to="/tables" className="btn-secondary text-sm">
-              Back to Tables
+            <Link
+              to="/"
+              className="inline-flex items-center justify-center px-3 py-1.5 text-xs sm:text-sm rounded-full border border-gray-300 text-gray-700 hover:bg-gray-50 transition"
+            >
+              Back to Dashboard
             </Link>
           </div>
 
           {/* Players list */}
           <div className="mt-6">
-            <h2 className="text-lg font-semibold text-gray-900 mb-3">Players in Lobby</h2>
-            {players?.length ? (
+            <div className="flex items-center justify-between mb-3">
+              <h2 className="text-lg font-semibold text-gray-900">
+                Players in Lobby
+              </h2>
+              <span className="text-xs text-gray-500">
+                {players.length}/{maxPlayers} joined
+              </span>
+            </div>
+
+            {players.length > 0 ? (
               <ul className="space-y-2">
                 {players.map((p, idx) => (
-                  <li key={String(p.playerId)} className="flex items-center justify-between bg-gray-50 rounded-md px-3 py-2">
+                  <li
+                    key={String(p.playerId)}
+                    className="flex items-center justify-between bg-gray-50 rounded-lg px-3 py-2"
+                  >
                     <div className="flex items-center gap-3">
-                      <div className="w-8 h-8 rounded-full bg-primary-100 text-primary-700 flex items-center justify-center font-semibold">
+                      <div className="w-8 h-8 rounded-full bg-emerald-100 text-emerald-700 flex items-center justify-center font-semibold text-sm">
                         {idx + 1}
                       </div>
                       <div>
                         <div className="text-sm font-medium text-gray-900">
-                          {String(p.playerId) === String(user?.id) ? 'You' : p.username || `Player ${idx + 1}`}
+                          {String(p.playerId) === String(user?.id)
+                            ? "You"
+                            : p.username || `Player ${idx + 1}`}
                         </div>
-                        <div className="text-xs text-gray-500 capitalize">{p.status || 'active'}</div>
+                        <div className="text-xs text-gray-500 capitalize">
+                          {p.status || "active"}
+                          {String(currentTurn) === String(p.playerId) && (
+                            <span className="ml-1 text-[11px] text-emerald-600 font-semibold">
+                              • current turn
+                            </span>
+                          )}
+                        </div>
                       </div>
                     </div>
-                    <div className="text-xs text-gray-500">
-                      {p.connected ? 'online' : 'offline'}
+                    <div
+                      className={`text-xs font-medium ${
+                        p.connected ? "text-emerald-600" : "text-gray-400"
+                      }`}
+                    >
+                      {p.connected ? "online" : "offline"}
                     </div>
                   </li>
                 ))}
               </ul>
             ) : (
-              <p className="text-gray-600">No players yet. You’re the first — great choice! 🎉</p>
+              <p className="text-gray-600 text-sm">
+                No other players yet. You’re the first — great choice! 🎉
+              </p>
             )}
           </div>
 
           {/* Footer / status */}
-          <div className="mt-6 p-3 bg-gray-50 rounded-md">
+          <div className="mt-6 p-3 bg-gray-50 rounded-lg">
             <p className="text-sm text-gray-700">
-              Status: <span className="font-medium">{gameStatus || 'waiting'}</span>
+              Status:{" "}
+              <span className="font-medium">
+                {gameStatus || "waiting"}
+              </span>
               {table && (
                 <>
-                  {' • '} Min players: <span className="font-medium">{table.minPlayers}</span>
-                  {' • '} Max players: <span className="font-medium">{table.maxPlayers}</span>
+                  {" • "} Min players:{" "}
+                  <span className="font-medium">{minPlayers}</span>
+                  {" • "} Max players:{" "}
+                  <span className="font-medium">{maxPlayers}</span>
                 </>
               )}
             </p>
             <p className="text-xs text-gray-500 mt-1">
               The game will start automatically once enough players have joined.
+              Stay on this screen to be moved into the table as soon as it
+              starts.
             </p>
           </div>
         </div>

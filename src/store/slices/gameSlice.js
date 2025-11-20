@@ -40,7 +40,7 @@ export const declareWin = createAsyncThunk(
   }
 );
 
-// ---- Socket actions (socket handshake already has token) ----
+// ---- Socket actions ----
 export const joinTable = (tableIdOrObj) => {
   const tableId = typeof tableIdOrObj === 'string' ? tableIdOrObj : tableIdOrObj?.tableId;
   if (!tableId) return;
@@ -48,7 +48,7 @@ export const joinTable = (tableIdOrObj) => {
 };
 export const drawCard = (gameId, _playerId, source) => {
   if (!gameId || !source) return;
-  socketService.emit('rummy/draw_card', { gameId, source }); // 'drawPile' | 'discard'
+  socketService.emit('rummy/draw_card', { gameId, source });
 };
 export const discardCard = (gameId, _playerId, card) => {
   if (!gameId || !card) return;
@@ -63,7 +63,6 @@ export const dropGame = (gameId, _playerId) => {
   socketService.emit('rummy/drop', { gameId });
 };
 export const declareWinSocket = (payload) => {
-  // Server expects { payload }
   socketService.emit('rummy/declare_win', { payload });
 };
 
@@ -74,9 +73,9 @@ const initialState = {
   currentTurn: null,
   myCards: [],
   discardPile: [],
-  drawPile: [],
+  drawPile: [],        // 👈 will hold top 10 from server
   selectedCards: [],
-  gameStatus: 'waiting', // waiting, playing, ended
+  gameStatus: 'waiting',
   loading: false,
   error: null,
   notifications: [],
@@ -119,6 +118,7 @@ const gameSlice = createSlice({
       if (action.payload) state.discardPile.push(action.payload);
     },
     setDrawPile: (state, action) => {
+      console.log('[GAME] setDrawPile called with', action.payload);
       state.drawPile = action.payload || [];
     },
     toggleCardSelection: (state, action) => {
@@ -170,15 +170,28 @@ const gameSlice = createSlice({
         state.error = null;
       })
       .addCase(getGameState.fulfilled, (state, action) => {
+        console.log('[GAME] getGameState.fulfilled payload:', action.payload);
+
         state.loading = false;
         state.gameState = action.payload;
         state.currentGame = action.payload;
         state.players = action.payload.players || [];
         state.currentTurn = action.payload.currentTurn;
 
-        // Seed discard pile from top only (avoid dupes)
+        // 👇 If API returns drawPileTop, prefer that; else full drawPile
+        if (Array.isArray(action.payload.drawPileTop)) {
+          state.drawPile = action.payload.drawPileTop;
+        } else if (Array.isArray(action.payload.drawPile)) {
+          state.drawPile = action.payload.drawPile;
+        } else {
+          state.drawPile = [];
+        }
+
+        // Discard: only need top for now
         state.discardPile = [];
-        if (action.payload.discardTop) state.discardPile.push(action.payload.discardTop);
+        if (action.payload.discardTop) {
+          state.discardPile.push(action.payload.discardTop);
+        }
 
         state.gameStatus = action.payload.status;
 
