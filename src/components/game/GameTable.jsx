@@ -1,5 +1,11 @@
 // client/src/components/game/GameTable.jsx
-import React, { useEffect, useMemo, useState, useCallback, useRef } from "react";
+import React, {
+  useEffect,
+  useMemo,
+  useState,
+  useCallback,
+  useRef,
+} from "react";
 import { useSelector, useDispatch } from "react-redux";
 import { useParams, useNavigate } from "react-router-dom";
 import socketService from "../../config/socket";
@@ -26,6 +32,7 @@ import PlayerHand from "./PlayerHand";
 import LoadingSpinner from "../common/LoadingSpinner";
 import ErrorMessage from "../common/ErrorMessage";
 import { getCardImage } from "../utils/cardimages";
+import cardBack from "../../assets/cards/back_card.jpeg"; // adjust path as needed
 
 const GameTable = () => {
   const dispatch = useDispatch();
@@ -48,6 +55,20 @@ const GameTable = () => {
   const [handGroups, setHandGroups] = useState({ groups: [], ungrouped: [] });
   const [showDeclareModal, setShowDeclareModal] = useState(false);
 
+
+
+// 🔹 Discard history visibility
+const [showDiscardHistory, setShowDiscardHistory] = useState(false);
+
+  // 🔹 Orientation state – to force landscape UX
+  const [isPortrait, setIsPortrait] = useState(false);
+
+  // 🔹 Card image loading state
+  const [cardImagesLoaded, setCardImagesLoaded] = useState(false);
+  const handleCardImageLoad = useCallback(() => {
+    setCardImagesLoaded(true);
+  }, []);
+
   const discardTop = useMemo(
     () => (discardPile?.length ? discardPile[discardPile.length - 1] : null),
     [discardPile]
@@ -57,8 +78,8 @@ const GameTable = () => {
     discardTopRef.current = discardTop;
   }, [discardTop]);
 
-  // 👇 Top 10 draw cards (already coming sliced from backend, but slice for safety)
-  const visibleDrawPile = useMemo(
+  // 👇 Top 10 DISCARD cards (server sends this in drawPileTop)
+  const visibleDiscardPile = useMemo(
     () => (Array.isArray(drawPile) ? drawPile.slice(-10) : []),
     [drawPile]
   );
@@ -67,6 +88,28 @@ const GameTable = () => {
     () => currentGame?.gameId || `GM-${String(tableId)}`,
     [currentGame?.gameId, tableId]
   );
+
+  // ---------------- ORIENTATION ENFORCEMENT (LANDSCAPE) ----------------
+  useEffect(() => {
+    const checkOrientation = () => {
+      if (typeof window === "undefined") return;
+      setIsPortrait(window.innerHeight > window.innerWidth);
+    };
+
+    checkOrientation();
+    window.addEventListener("resize", checkOrientation);
+    window.addEventListener("orientationchange", checkOrientation);
+
+    // Optional: try to lock to landscape (will silently fail on many browsers)
+    if (window.screen && window.screen.orientation && window.screen.orientation.lock) {
+      window.screen.orientation.lock("landscape").catch(() => {});
+    }
+
+    return () => {
+      window.removeEventListener("resize", checkOrientation);
+      window.removeEventListener("orientationchange", checkOrientation);
+    };
+  }, []);
 
   // ---------------- SOCKET SETUP ----------------
   useEffect(() => {
@@ -86,12 +129,15 @@ const GameTable = () => {
       dispatch(addNotification({ type: "info", message: "Player connected" }));
 
     const onPlayerDisconnected = () =>
-      dispatch(addNotification({ type: "warning", message: "Player disconnected" }));
+      dispatch(
+        addNotification({ type: "warning", message: "Player disconnected" })
+      );
 
     const onState = (s) => {
       // Initial / sync state from server
       if (s?.players) dispatch(setPlayers(s.players));
-      if (typeof s?.currentTurn !== "undefined") dispatch(setCurrentTurn(s.currentTurn));
+      if (typeof s?.currentTurn !== "undefined")
+        dispatch(setCurrentTurn(s.currentTurn));
 
       if (s?.discardTop) {
         dispatch(setDiscardPile([s.discardTop]));
@@ -108,7 +154,12 @@ const GameTable = () => {
     const onGameStarted = (data) => {
       dispatch(setGameState(data));
       dispatch(setGameStatus("playing"));
-      dispatch(addNotification({ type: "success", message: "Game started! Good luck!" }));
+      dispatch(
+        addNotification({
+          type: "success",
+          message: "Game started! Good luck!",
+        })
+      );
     };
 
     const onYourHand = ({ hand }) => dispatch(setMyCards(hand || []));
@@ -122,6 +173,11 @@ const GameTable = () => {
     };
 
     const onCardDiscarded = (data) => {
+      if (Array.isArray(data.drawPileTop)) {
+        // 🔁 keep top 10 discard memory in sync
+        dispatch(setDrawPile(data.drawPileTop));
+      }
+
       if (data.discardTop) {
         dispatch(setDiscardPile([data.discardTop]));
       } else if (data.card) {
@@ -134,7 +190,12 @@ const GameTable = () => {
       dispatch(addNotification({ type: "warning", message: "Player dropped" }));
 
     const onTimedOut = ({ playerId }) =>
-      dispatch(addNotification({ type: "warning", message: `Player timed out (${playerId})` }));
+      dispatch(
+        addNotification({
+          type: "warning",
+          message: `Player timed out (${playerId})`,
+        })
+      );
 
     const onWinDeclared = (data) => {
       dispatch(setGameStatus("ended"));
@@ -180,7 +241,8 @@ const GameTable = () => {
       });
     };
 
-    const onError = (message) => dispatch(addNotification({ type: "error", message }));
+    const onError = (message) =>
+      dispatch(addNotification({ type: "error", message }));
 
     const events = [
       ["connect", doJoin],
@@ -189,7 +251,7 @@ const GameTable = () => {
       ["rummy/state", onState],
       ["rummy/game_started", onGameStarted],
       ["rummy/your_hand", onYourHand],
-      ["rummy/card_drawn", onCardDrawn],       // 👈 NEW
+      ["rummy/card_drawn", onCardDrawn],
       ["rummy/card_discarded", onCardDiscarded],
       ["rummy/next_turn", onNextTurn],
       ["rummy/player_dropped", onPlayerDropped],
@@ -212,7 +274,11 @@ const GameTable = () => {
   const handleDrawCard = (source) => {
     if (!isMyTurn || !currentGame) return;
     if (!source) return;
-    drawCard(currentGame.gameId, user.id, source === "discardPile" ? "discard" : source);
+    drawCard(
+      currentGame.gameId,
+      user.id,
+      source === "discardPile" ? "discard" : source
+    );
   };
 
   const handleDiscardCard = (card) => {
@@ -247,12 +313,27 @@ const GameTable = () => {
   if (error)
     return (
       <div className="flex items-center justify-center min-h-screen">
-        <ErrorMessage message={error} onRetry={() => dispatch(getGameState(tableId))} />
+        <ErrorMessage
+          message={error}
+          onRetry={() => dispatch(getGameState(tableId))}
+        />
       </div>
     );
 
   return (
-    <div className="min-h-screen w-full bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-green-900 via-green-950 to-black text-white select-none overflow-hidden">
+    <div className="min-h-screen w-full bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-green-900 via-green-950 to-black text-white select-none overflow-hidden relative">
+      {/* 🔹 PORTRAIT OVERLAY – Force Landscape UX */}
+      {isPortrait && (
+        <div className="fixed inset-0 z-50 bg-black flex flex-col items-center justify-center text-center px-6">
+          <div className="text-white text-lg font-semibold mb-2">
+            Please rotate your device
+          </div>
+          <div className="text-gray-300 text-xs max-w-xs">
+            This Rummy table is best experienced in landscape mode.
+          </div>
+        </div>
+      )}
+
       <div className="h-screen w-full flex flex-col">
         {/* HEADER */}
         <div className="px-2 py-1 bg-neutral-950/70 border-b border-white/10 flex items-center justify-between flex-shrink-0">
@@ -263,8 +344,12 @@ const GameTable = () => {
               {currentTurn && (
                 <>
                   {" • "}
-                  <span className={isMyTurn ? "text-green-400 font-medium" : ""}>
-                    {String(currentTurn) === String(user.id) ? "Your Turn" : "Wait"}
+                  <span
+                    className={isMyTurn ? "text-green-400 font-medium" : ""}
+                  >
+                    {String(currentTurn) === String(user.id)
+                      ? "Your Turn"
+                      : "Wait"}
                   </span>
                 </>
               )}
@@ -298,51 +383,29 @@ const GameTable = () => {
 
             <div className="relative z-10 h-full flex items-center justify-center">
               <div className="flex items-center gap-6">
-                {/* DRAW PILE with TOP 10 visible */}
+                {/* DRAW PILE */}
                 <div className="text-center">
                   <div
                     onClick={() => handleDrawCard("drawPile")}
-                    className={`relative w-24 h-20 rounded-lg border-2 border-emerald-700 bg-emerald-900/80 shadow-lg flex items-center justify-center overflow-hidden ${
+                    className={`w-11 h-16 rounded-lg border-2 border-gray-200 bg-emerald-950 shadow-lg flex items-center justify-center ${
                       isMyTurn
                         ? "cursor-pointer hover:scale-105 active:scale-110 transition-transform"
                         : "opacity-50 cursor-not-allowed"
                     }`}
-                    title={isMyTurn ? "Draw" : "Wait"}
+                    title={isMyTurn ? "Draw from deck" : "Wait"}
                   >
-                    {visibleDrawPile.length ? (
-                      <div className="flex -space-x-5">
-                        {visibleDrawPile.map((card, idx) => {
-                          const imgSrc = getCardImage(card);
-                          const key = `${card.rank}-${card.suit}-${idx}`;
-                          return (
-                            <div
-                              key={key}
-                              className="w-8 h-12 rounded-md border border-emerald-700 bg-emerald-800 shadow-md overflow-hidden"
-                            >
-                              {imgSrc ? (
-                                <img
-                                  src={imgSrc}
-                                  alt={`${card.rank} of ${card.suit}`}
-                                  className="w-full h-full object-cover"
-                                  draggable={false}
-                                />
-                              ) : (
-                                <div className="flex flex-col items-center justify-center text-xs text-emerald-100">
-                                  <span className="font-bold">{card.rank}</span>
-                                  <span>{suitGlyph(card.suit)}</span>
-                                </div>
-                              )}
-                            </div>
-                          );
-                        })}
-                      </div>
-                    ) : (
-                      <span className="text-[9px] text-emerald-100 font-medium">
-                        No cards
-                      </span>
-                    )}
+                    <div className="w-[90%] h-[90%] rounded-md overflow-hidden shadow-md border border-emerald-700 bg-emerald-900">
+                      <img
+                        src={cardBack}
+                        alt="Draw pile"
+                        className="w-full h-full object-cover"
+                        draggable={false}
+                      />
+                    </div>
                   </div>
-                  <p className="mt-1 text-[9px] text-emerald-200/80 font-medium">Draw Pile</p>
+                  <p className="mt-1 text-[9px] text-emerald-200/80 font-medium">
+                    Draw Pile
+                  </p>
                 </div>
 
                 {/* STATUS DOT */}
@@ -357,49 +420,94 @@ const GameTable = () => {
                   />
                 </div>
 
-                {/* DISCARD PILE (only top card) */}
+                
+                {/* DISCARD PILE */}
                 <div className="text-center">
                   <div
                     onClick={() => handleDrawCard("discard")}
-                    className={`w-11 h-16 rounded-lg border-2 border-gray-200 bg-white shadow-lg flex items-center justify-center ${
+                    className={`relative w-24 h-20 rounded-lg border-2 border-emerald-700 bg-emerald-900/80 shadow-lg flex items-center justify-center overflow-hidden ${
                       isMyTurn
                         ? "cursor-pointer hover:scale-105 active:scale-110 transition-transform"
                         : "opacity-50 cursor-not-allowed"
                     }`}
-                    title={isMyTurn ? "Pick discard" : "Wait"}
+                    title={isMyTurn ? "Pick from discard" : "Wait"}
                   >
-                    {discardTop ? (
-                      (() => {
-                        const imgSrc = getCardImage(discardTop);
-                        return imgSrc ? (
-                          <img
-                            src={imgSrc}
-                            alt={`${discardTop.rank} of ${discardTop.suit}`}
-                            className="w-full h-full object-contain rounded-md"
-                            draggable={false}
-                          />
-                        ) : (
-                          <div className="flex flex-col items-center justify-center text-gray-900">
-                            <span className="text-base font-bold leading-none">
-                              {discardTop.rank}
-                            </span>
-                            <span
-                              className={`text-lg leading-none ${
-                                discardTop.suit === "Hearts" || discardTop.suit === "Diamonds"
-                                  ? "text-red-600"
-                                  : "text-gray-900"
-                              }`}
-                            >
-                              {suitGlyph(discardTop.suit)}
+                    {visibleDiscardPile.length ? (
+                      <div className="relative w-full h-full flex items-center justify-center">
+                        <div
+                          className={`flex ${
+                            showDiscardHistory ? "-space-x-5" : "justify-center"
+                          }`}
+                        >
+                          {(
+                            showDiscardHistory
+                              ? visibleDiscardPile          // show top 10
+                              : [visibleDiscardPile[visibleDiscardPile.length - 1]] // only top card
+                          ).map((card, idx) => {
+                            const imgSrc = getCardImage(card);
+                            const key = `${card.rank}-${card.suit}-${idx}`;
+                            return (
+                              <div
+                                key={key}
+                                className="w-8 h-12 rounded-md border border-emerald-700 bg-emerald-800 shadow-md overflow-hidden"
+                              >
+                                {imgSrc ? (
+                                  <img
+                                    src={imgSrc}
+                                    alt={`${card.rank} of ${card.suit}`}
+                                    className="w-full h-full object-cover"
+                                    draggable={false}
+                                    onLoad={handleCardImageLoad}
+                                  />
+                                ) : (
+                                  <div className="flex flex-col items-center justify-center text-xs text-emerald-100">
+                                    <span className="font-bold">{card.rank}</span>
+                                    <span>{suitGlyph(card.suit)}</span>
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          })}
+                        </div>
+
+                        {!cardImagesLoaded && (
+                          <div className="absolute inset-0 bg-emerald-900/80 flex items-center justify-center">
+                            <span className="text-[9px] text-emerald-100 font-medium">
+                              Loading cards...
                             </span>
                           </div>
-                        );
-                      })()
+                        )}
+                      </div>
                     ) : (
-                      <span className="text-[9px] text-gray-400 font-medium">Empty</span>
+                      <span className="text-[9px] text-emerald-100 font-medium">
+                        No cards
+                      </span>
                     )}
                   </div>
-                  <p className="mt-1 text-[9px] text-emerald-200/80 font-medium">Discard</p>
+
+                  {/* Label + eye button */}
+                  <div className="mt-1 flex items-center justify-center gap-1">
+                    <p className="text-[9px] text-emerald-200/80 font-medium">
+                      Discard Pile{showDiscardHistory ? " (Top 10)" : ""}
+                    </p>
+                    {visibleDiscardPile.length > 1 && (
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation(); // don’t trigger draw
+                          setShowDiscardHistory((v) => !v);
+                        }}
+                        className="w-5 h-5 rounded-full border border-emerald-400 bg-emerald-900/70 flex items-center justify-center text-[9px] hover:bg-emerald-800"
+                        title={
+                          showDiscardHistory
+                            ? "Hide discard history"
+                            : "Show last 10 discards"
+                        }
+                      >
+                        {showDiscardHistory ? "🙈" : "👁️"}
+                      </button>
+                    )}
+                  </div>
                 </div>
               </div>
             </div>
@@ -427,7 +535,9 @@ const GameTable = () => {
       {showDeclareModal && (
         <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-3">
           <div className="bg-white rounded-xl p-4 max-w-sm w-full">
-            <h3 className="text-base font-bold mb-2 text-gray-900">Declare Win</h3>
+            <h3 className="text-base font-bold mb-2 text-gray-900">
+              Declare Win
+            </h3>
             <p className="text-gray-600 mb-3 text-xs">
               Are you sure you want to declare? We will validate your sequences.
             </p>

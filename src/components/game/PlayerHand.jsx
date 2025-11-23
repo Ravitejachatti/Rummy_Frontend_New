@@ -149,24 +149,27 @@ export default function PlayerHand({
   };
 
   // ---------- Group ----------
-  const handleGroupSelected = () => {
-    if (selected.size === 0) return;
-    const type = prompt("Enter group name (Pure / Impure / Set / 1st Life)", "Pure");
-    if (!type) return;
+// ---------- Group ----------
+const handleGroupSelected = () => {
+  if (selected.size === 0) return;
 
-    const ids = Array.from(selected).sort((a, b) => a - b);
-    const chosen = ids.map((i) => ungrouped[i]);
+  // selected card indices from ungrouped
+  const ids = Array.from(selected).sort((a, b) => a - b);
+  const chosen = ids.map((i) => ungrouped[i]);
 
-    const remaining = [...ungrouped];
-    for (let i = ids.length - 1; i >= 0; i--) remaining.splice(ids[i], 1);
+  const remaining = [...ungrouped];
+  for (let i = ids.length - 1; i >= 0; i--) {
+    remaining.splice(ids[i], 1);
+  }
 
-    setUngrouped(remaining);
-    setGroups((g) => [
-      ...g,
-      { id: Date.now().toString(), name: type, items: chosen },
-    ]);
-    setSelected(new Set());
-  };
+  // 👇 no prompt, no manual name
+  setUngrouped(remaining);
+  setGroups((g) => [
+    ...g,
+    { id: Date.now().toString(), items: chosen }, // just id + items
+  ]);
+  setSelected(new Set());
+};
 
   // ---------- Ungroup ----------
   const handleUngroup = (groupId) => {
@@ -546,17 +549,14 @@ export default function PlayerHand({
               ))}
             </div>
 
-            <div className="flex items-center gap-0.5 mt-0.5">
-              <div className="text-[9px] text-white bg-green-600 rounded-b-md font-semibold px-1.5 py-[1px]">
-                {g.name}
-              </div>
-              <button
-                onClick={() => handleUngroup(g.id)}
-                className="text-[9px] text-white bg-red-600 rounded-md font-semibold px-1 py-[1px] hover:bg-red-500 active:scale-95"
-              >
-                ✕
-              </button>
-            </div>
+          <div className="flex items-center justify-center mt-0.5">
+            <button
+              onClick={() => handleUngroup(g.id)}
+              className="text-[9px] text-white bg-red-600 rounded-md font-semibold px-1.5 py-[1px] hover:bg-red-500 active:scale-95"
+            >
+              Ungroup
+            </button>
+          </div>
           </div>
         ))}
 
