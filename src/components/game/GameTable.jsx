@@ -27,30 +27,37 @@ import {
   declareWinSocket,
   reorderMyCards,
   reorderCards,
+  removeNotification
 } from "../../store/slices/gameSlice";
 import PlayerHand from "./PlayerHand";
 import LoadingSpinner from "../common/LoadingSpinner";
 import ErrorMessage from "../common/ErrorMessage";
 import { getCardImage } from "../utils/cardimages";
-import cardBack from "../../assets/cards/back_card.jpeg"; // adjust path as needed
+import cardBack from "../../assets/cards/back_card.jpeg"; // adjust path as neededd
+import NotificationCenter from "../common/Notificaton";
 
 const GameTable = () => {
   const dispatch = useDispatch();
   const navigate = useNavigate();
   const { tableId } = useParams();
   const { user } = useSelector((state) => state.auth);
-  const {
-    currentGame,
-    players,
-    currentTurn,
-    myCards,
-    discardPile,
-    drawPile,
-    gameStatus,
-    isMyTurn,
-    loading,
-    error,
-  } = useSelector((state) => state.game);
+const {
+  currentGame,
+  players,
+  currentTurn,
+  myCards,
+  discardPile,
+  drawPile,
+  gameStatus,
+  loading,
+  error,
+  notifications,
+} = useSelector((state) => state.game);
+
+const isMyTurn = React.useMemo(() => {
+  if (!user || !currentTurn) return false;
+  return String(currentTurn) === String(user.id);
+}, [user, currentTurn]);
 
   const [handGroups, setHandGroups] = useState({ groups: [], ungrouped: [] });
   const [showDeclareModal, setShowDeclareModal] = useState(false);
@@ -69,20 +76,25 @@ const [showDiscardHistory, setShowDiscardHistory] = useState(false);
     setCardImagesLoaded(true);
   }, []);
 
-  const discardTop = useMemo(
-    () => (discardPile?.length ? discardPile[discardPile.length - 1] : null),
-    [discardPile]
-  );
-  const discardTopRef = useRef(null);
-  useEffect(() => {
-    discardTopRef.current = discardTop;
-  }, [discardTop]);
+// 🔹 discardHistory is actually the top 10 discard cards sent by server
+const discardHistory = useMemo(
+  () => (Array.isArray(drawPile) ? drawPile.slice(-10) : []),
+  [drawPile]
+);
 
-  // 👇 Top 10 DISCARD cards (server sends this in drawPileTop)
-  const visibleDiscardPile = useMemo(
-    () => (Array.isArray(drawPile) ? drawPile.slice(-10) : []),
-    [drawPile]
-  );
+// Top-most card on discard
+const topDiscard = discardHistory.length
+  ? discardHistory[discardHistory.length - 1]
+  : null;
+
+// What to show based on 👁 toggle
+const cardsToShow = useMemo(() => {
+  if (!discardHistory.length) return [];
+  if (showDiscardHistory) {
+    return discardHistory;          // up to 10 cards (already sliced)
+  }
+  return [topDiscard];              // only 1 card (top)
+}, [discardHistory, showDiscardHistory, topDiscard]);
 
   const gameIdForNav = useCallback(
     () => currentGame?.gameId || `GM-${String(tableId)}`,
@@ -241,6 +253,20 @@ const [showDiscardHistory, setShowDiscardHistory] = useState(false);
       });
     };
 
+    const onInvalidDeclaration = (data) => {
+     console.warn("[SOCKET] rummy/invalid_declaration:", data);
+      dispatch(
+        addNotification({
+          type: "error",
+          message:
+            data?.message ||
+            "Invalid declaration: please check your groups and sequences.",
+        })
+      );
+      // make sure modal is closed if server rejected it
+      setShowDeclareModal(false);
+   };
+
     const onError = (message) =>
       dispatch(addNotification({ type: "error", message }));
 
@@ -258,6 +284,7 @@ const [showDiscardHistory, setShowDiscardHistory] = useState(false);
       ["rummy/player_timedout", onTimedOut],
       ["rummy/win_declared", onWinDeclared],
       ["rummy/auto_win", onAutoWin],
+      ["rummy/invalid_declaration", onInvalidDeclaration],
       ["rummy/error", onError],
     ];
 
@@ -290,13 +317,26 @@ const [showDiscardHistory, setShowDiscardHistory] = useState(false);
   const handleDrop = () => currentGame && dropGame(currentGame.gameId);
 
   const handleDeclareWin = () => {
-    if (!currentGame) return;
+    console.log("handleDeclareWin called");
+    const gameId = currentGame?.gameId || `GM-${String(tableId)}`;
+    console.log("Game ID for declare:", gameId);
+    if (!gameId || !user?.id) {
+      dispatch(
+        addNotification({
+          type: "error",
+          message: "Unable to declare right now. Game not ready.",
+        })
+      );
+      return;
+    }
+    console.log("Declaring win with groups:", handGroups);
     const payload = {
-      gameId: currentGame.gameId,
+      gameId,
       playerId: user.id,
       groups: handGroups.groups,
       ungrouped: handGroups.ungrouped,
     };
+    console.log("Declare payload:", payload);
     declareWinSocket(payload);
     setShowDeclareModal(false);
   };
@@ -422,93 +462,90 @@ const [showDiscardHistory, setShowDiscardHistory] = useState(false);
 
                 
                 {/* DISCARD PILE */}
-                <div className="text-center">
-                  <div
-                    onClick={() => handleDrawCard("discard")}
-                    className={`relative w-24 h-20 rounded-lg border-2 border-emerald-700 bg-emerald-900/80 shadow-lg flex items-center justify-center overflow-hidden ${
-                      isMyTurn
-                        ? "cursor-pointer hover:scale-105 active:scale-110 transition-transform"
-                        : "opacity-50 cursor-not-allowed"
-                    }`}
-                    title={isMyTurn ? "Pick from discard" : "Wait"}
-                  >
-                    {visibleDiscardPile.length ? (
-                      <div className="relative w-full h-full flex items-center justify-center">
-                        <div
-                          className={`flex ${
-                            showDiscardHistory ? "-space-x-5" : "justify-center"
-                          }`}
-                        >
-                          {(
-                            showDiscardHistory
-                              ? visibleDiscardPile          // show top 10
-                              : [visibleDiscardPile[visibleDiscardPile.length - 1]] // only top card
-                          ).map((card, idx) => {
-                            const imgSrc = getCardImage(card);
-                            const key = `${card.rank}-${card.suit}-${idx}`;
-                            return (
-                              <div
-                                key={key}
-                                className="w-8 h-12 rounded-md border border-emerald-700 bg-emerald-800 shadow-md overflow-hidden"
-                              >
-                                {imgSrc ? (
-                                  <img
-                                    src={imgSrc}
-                                    alt={`${card.rank} of ${card.suit}`}
-                                    className="w-full h-full object-cover"
-                                    draggable={false}
-                                    onLoad={handleCardImageLoad}
-                                  />
-                                ) : (
-                                  <div className="flex flex-col items-center justify-center text-xs text-emerald-100">
-                                    <span className="font-bold">{card.rank}</span>
-                                    <span>{suitGlyph(card.suit)}</span>
-                                  </div>
-                                )}
-                              </div>
-                            );
-                          })}
-                        </div>
 
-                        {!cardImagesLoaded && (
-                          <div className="absolute inset-0 bg-emerald-900/80 flex items-center justify-center">
-                            <span className="text-[9px] text-emerald-100 font-medium">
-                              Loading cards...
-                            </span>
-                          </div>
-                        )}
-                      </div>
-                    ) : (
-                      <span className="text-[9px] text-emerald-100 font-medium">
-                        No cards
-                      </span>
-                    )}
-                  </div>
-
-                  {/* Label + eye button */}
-                  <div className="mt-1 flex items-center justify-center gap-1">
-                    <p className="text-[9px] text-emerald-200/80 font-medium">
-                      Discard Pile{showDiscardHistory ? " (Top 10)" : ""}
-                    </p>
-                    {visibleDiscardPile.length > 1 && (
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation(); // don’t trigger draw
-                          setShowDiscardHistory((v) => !v);
-                        }}
-                        className="w-5 h-5 rounded-full border border-emerald-400 bg-emerald-900/70 flex items-center justify-center text-[9px] hover:bg-emerald-800"
-                        title={
-                          showDiscardHistory
-                            ? "Hide discard history"
-                            : "Show last 10 discards"
-                        }
+              <div className="text-center">
+                <div
+                  onClick={() => handleDrawCard("discard")}
+                  className={`relative w-24 h-20 rounded-lg border-2 border-emerald-700 bg-emerald-900/80 shadow-lg flex items-center justify-center overflow-hidden ${
+                    isMyTurn
+                      ? "cursor-pointer hover:scale-105 active:scale-110 transition-transform"
+                      : "opacity-50 cursor-not-allowed"
+                  }`}
+                  title={isMyTurn ? "Pick from discard" : "Wait"}
+                >
+                  {cardsToShow.length ? (
+                    <div className="relative w-full h-full flex items-center justify-center">
+                      <div
+                        className={`flex ${
+                          showDiscardHistory ? "-space-x-5" : "justify-center"
+                        }`}
                       >
-                        {showDiscardHistory ? "🙈" : "👁️"}
-                      </button>
-                    )}
-                  </div>
+                        {cardsToShow.map((card, idx) => {
+                          const imgSrc = getCardImage(card);
+                          const key = `${card.rank}-${card.suit}-${idx}`;
+                          return (
+                            <div
+                              key={key}
+                              className="w-8 h-12 rounded-md border border-emerald-700 bg-emerald-800 shadow-md overflow-hidden"
+                            >
+                              {imgSrc ? (
+                                <img
+                                  src={imgSrc}
+                                  alt={`${card.rank} of ${card.suit}`}
+                                  className="w-full h-full object-cover"
+                                  draggable={false}
+                                  onLoad={handleCardImageLoad}
+                                />
+                              ) : (
+                                <div className="flex flex-col items-center justify-center text-xs text-emerald-100">
+                                  <span className="font-bold">{card.rank}</span>
+                                  <span>{suitGlyph(card.suit)}</span>
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+
+                      {!cardImagesLoaded && (
+                        <div className="absolute inset-0 bg-emerald-900/80 flex items-center justify-center">
+                          <span className="text-[9px] text-emerald-100 font-medium">
+                            Loading cards...
+                          </span>
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                    <span className="text-[9px] text-emerald-100 font-medium">
+                      No cards
+                    </span>
+                  )}
                 </div>
+
+                {/* Label + eye button */}
+                <div className="mt-1 flex items-center justify-center gap-1">
+                  <p className="text-[9px] text-emerald-200/80 font-medium">
+                    Discard Pile{showDiscardHistory ? " (Top 10)" : ""}
+                  </p>
+                  {discardHistory.length > 1 && (
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation(); // don’t trigger draw
+                        setShowDiscardHistory((v) => !v);
+                      }}
+                      className="w-5 h-5 rounded-full border border-emerald-400 bg-emerald-900/70 flex items-center justify-center text-[9px] hover:bg-emerald-800"
+                      title={
+                        showDiscardHistory
+                          ? "Hide discard history"
+                          : "Show last 10 discards"
+                      }
+                    >
+                      {showDiscardHistory ? "🙈" : "👁️"}
+                    </button>
+                  )}
+                </div>
+              </div>
               </div>
             </div>
 
@@ -558,6 +595,13 @@ const [showDiscardHistory, setShowDiscardHistory] = useState(false);
           </div>
         </div>
       )}
+
+      {/* 🔔 GLOBAL NOTIFICATIONS FOR THIS SCREEN */}
+      <NotificationCenter
+        notifications={notifications}
+        onClose={(id) => dispatch(removeNotification(id))}
+        position="top-right"
+      />
     </div>
   );
 };

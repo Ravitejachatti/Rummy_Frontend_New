@@ -73,13 +73,12 @@ const initialState = {
   currentTurn: null,
   myCards: [],
   discardPile: [],
-  drawPile: [],        // 👈 will hold top 10 from server
+  drawPile: [],        // 👈 used for top-10 discard history
   selectedCards: [],
   gameStatus: 'waiting',
   loading: false,
   error: null,
   notifications: [],
-  isMyTurn: false,
   gameHistory: [],
 };
 
@@ -95,9 +94,7 @@ const gameSlice = createSlice({
       state.players = action.payload || [];
     },
     setCurrentTurn: (state, action) => {
-      state.currentTurn = action.payload;
-      const currentUser = JSON.parse(localStorage.getItem('user'));
-      state.isMyTurn = !!(currentUser && String(action.payload) === String(currentUser.id));
+      state.currentTurn = action.payload ?? null;
     },
     setMyCards: (state, action) => {
       state.myCards = action.payload || [];
@@ -135,14 +132,22 @@ const gameSlice = createSlice({
       state.gameStatus = action.payload;
     },
     addNotification: (state, action) => {
-      state.notifications.push({
-        id: Date.now(),
-        ...action.payload,
-      });
+      const { type = 'info', message = '', autoDismissMs } = action.payload || {};
+      // ✅ Always keep only the latest notification
+      state.notifications = [
+        {
+          id: Date.now(),
+          type,
+          message,
+          autoDismissMs: autoDismissMs ?? 4000, // default 4s
+        },
+      ];
     },
     removeNotification: (state, action) => {
-      state.notifications = state.notifications.filter(n => n.id !== action.payload);
+      const id = action.payload;
+      state.notifications = state.notifications.filter((n) => n.id !== id);
     },
+
     clearError: (state) => {
       state.error = null;
     },
@@ -158,6 +163,7 @@ const gameSlice = createSlice({
       state.gameStatus = 'waiting';
       state.isMyTurn = false;
       state.error = null;
+      state.notifications = [];
     },
     reorderMyCards: (state, action) => {
       state.myCards = action.payload || [];
@@ -178,7 +184,6 @@ const gameSlice = createSlice({
         state.players = action.payload.players || [];
         state.currentTurn = action.payload.currentTurn;
 
-        // 👇 If API returns drawPileTop, prefer that; else full drawPile
         if (Array.isArray(action.payload.drawPileTop)) {
           state.drawPile = action.payload.drawPileTop;
         } else if (Array.isArray(action.payload.drawPile)) {
@@ -187,7 +192,6 @@ const gameSlice = createSlice({
           state.drawPile = [];
         }
 
-        // Discard: only need top for now
         state.discardPile = [];
         if (action.payload.discardTop) {
           state.discardPile.push(action.payload.discardTop);
@@ -195,10 +199,11 @@ const gameSlice = createSlice({
 
         state.gameStatus = action.payload.status;
 
-        const currentUser = JSON.parse(localStorage.getItem('user'));
-        if (currentUser) {
-          state.isMyTurn = String(action.payload.currentTurn) === String(currentUser.id);
-        }
+        // ❌ REMOVE this block:
+        // const currentUser = JSON.parse(localStorage.getItem('user'));
+        // if (currentUser) {
+        //   state.isMyTurn = String(action.payload.currentTurn) === String(currentUser.id);
+        // }
       })
       .addCase(getGameState.rejected, (state, action) => {
         state.loading = false;

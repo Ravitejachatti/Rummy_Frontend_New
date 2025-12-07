@@ -18,6 +18,7 @@ pnpm-debug.log*
 .env
 .env.*  # If you use environment files like .env.development etc.
 
+
 # Mac system files (optional but recommended)
 .DS_Store
 
