@@ -24,14 +24,16 @@ const PublicRoute = ({ children }) => {
 };
 
 function App() {
-  const { isAuthenticated, token } = useSelector((s) => s.auth);
+  const { isAuthenticated, accessToken } = useSelector((s) => s.auth);
+  console.log("App render - isAuthenticated:", isAuthenticated);
+  console.log("App render - token:", accessToken);
 
   useEffect(() => {
-    if (isAuthenticated && token) {
-      socketService.connect(token);
+    if (isAuthenticated && accessToken) {
+      socketService.connect(accessToken);
     }
     return () => socketService.disconnect();
-  }, [isAuthenticated, token]);
+  }, [isAuthenticated, accessToken]);
 
   return (
     <Router>

@@ -7,10 +7,39 @@ const RummyResult = () => {
   const { gameId } = useParams();
   const navigate = useNavigate();
 
+  const [countdown, setCountdown] = React.useState(7);
+
   const winner = state?.winner;
   const isYou = !!state?.isYou;
   const losers = state?.losers || [];
-  const tableIdFromGame = gameId?.startsWith("GM-") ? gameId.slice(3) : state?.tableId;
+
+  // Extract tableId safely. Assuming format GM-{tableId}-{uuid} or passed in state
+  const tableIdFromGame = state?.tableId || (gameId?.startsWith("GM-") ? gameId.split("-")[1] : null);
+
+  React.useEffect(() => {
+    if (!tableIdFromGame) return;
+
+    const timer = setInterval(() => {
+      setCountdown((prev) => {
+        if (prev <= 1) {
+          clearInterval(timer);
+          console.log("[DEBUG] RummyResult: timer ended. state:", state);
+          const dest = state?.dropped ? "/dashboard" : `/game/${tableIdFromGame}`;
+          console.log("[DEBUG] RummyResult: tableIdFromGame:", tableIdFromGame);
+          console.log("[DEBUG] RummyResult: Navigating to:", dest);
+          navigate(dest);
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+
+    return () => clearInterval(timer);
+  }, [tableIdFromGame, navigate]);
+
+  const handleLeave = () => {
+    navigate("/");
+  };
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-emerald-900 via-emerald-950 to-black text-white p-6">
@@ -59,19 +88,26 @@ const RummyResult = () => {
           <div className="mb-6 text-white/80">Game ended.</div>
         )}
 
-        <div className="flex flex-col sm:flex-row gap-3">
-          <button
-            onClick={() => navigate(`/tables/${tableIdFromGame || ""}`)}
-            className="flex-1 px-4 py-2 rounded-xl bg-emerald-500 text-black font-semibold hover:bg-emerald-400"
-          >
-            Back to Table
-          </button>
-          <Link
-            to="/"
-            className="flex-1 text-center px-4 py-2 rounded-xl bg-white/10 hover:bg-white/20"
-          >
-            Home
-          </Link>
+        <div className="mt-8 flex flex-col gap-3">
+          <div className="text-center text-sm text-emerald-400 font-medium animate-pulse mb-1">
+            Starting next game in {countdown}s...
+          </div>
+
+          <div className="flex gap-3">
+            <button
+              onClick={() => navigate(state?.dropped ? "/dashboard" : `/game/${tableIdFromGame || ""}`)}
+              className="flex-1 py-3 rounded-xl bg-emerald-500 text-black font-bold shadow-lg hover:bg-emerald-400 active:scale-95 transition-all text-sm uppercase tracking-wide"
+            >
+              {state?.dropped ? "Return to Lobby" : "Continue Now"}
+            </button>
+            <button
+              onClick={handleLeave}
+              className="px-6 py-3 rounded-xl bg-red-900/40 border border-red-500/30 text-red-200 font-semibold hover:bg-red-900/60 active:scale-95 transition-all text-sm"
+              title="Leave the table logic"
+            >
+              Leave & Quit
+            </button>
+          </div>
         </div>
       </div>
     </div>

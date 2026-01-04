@@ -91,7 +91,7 @@ export default function Dashboard() {
         {tables.length > 0 && (
           <ul className="divide-y divide-gray-100">
             {tables.map((t) => {
-              const entryCost = t.chipValue ?? 0;
+              const entryCost = t.bankRange ?? 0;
               const canJoin = !!t.isActive && balance >= entryCost;
 
               return (

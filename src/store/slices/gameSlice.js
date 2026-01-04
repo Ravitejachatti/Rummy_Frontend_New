@@ -1,15 +1,15 @@
 // client/src/store/slices/gameSlice.js
-import { createSlice, createAsyncThunk } from '@reduxjs/toolkit';
-import api from '../../config/api';
-import socketService from '../../config/socket';
+import { createSlice, createAsyncThunk } from "@reduxjs/toolkit";
+import api from "../../config/api";
+import socketService from "../../config/socket";
 
 const pickToken = (getState) => {
   const s = getState();
-  return s?.auth?.token || localStorage.getItem('token') || '';
+  return s?.auth?.token || localStorage.getItem("accessToken") || localStorage.getItem("token") || "";
 };
 
 export const getGameState = createAsyncThunk(
-  'game/getGameState',
+  "game/getGameState",
   async (tableId, { rejectWithValue, getState }) => {
     try {
       const token = pickToken(getState);
@@ -18,52 +18,48 @@ export const getGameState = createAsyncThunk(
       });
       return response.data;
     } catch (error) {
-      return rejectWithValue(error.response?.data?.error || 'Failed to get game state');
-    }
-  }
-);
-
-export const declareWin = createAsyncThunk(
-  'game/declareWin',
-  async ({ playerId, gameId, sets }, { rejectWithValue, getState }) => {
-    try {
-      const token = pickToken(getState);
-      const response = await api.post(
-        '/api/rummy/game/declare',
-        { playerId, gameId, sets },
-        { headers: { Authorization: `Bearer ${token}` } }
-      );
-      return response.data;
-    } catch (error) {
-      return rejectWithValue(error.response?.data?.error || 'Failed to declare win');
+      return rejectWithValue(error.response?.data?.error || "Failed to get game state");
     }
   }
 );
 
 // ---- Socket actions ----
+import { getDeviceId, getHardwareSignature } from "../../utils/device";
+
+// ... existing imports
+
 export const joinTable = (tableIdOrObj) => {
-  const tableId = typeof tableIdOrObj === 'string' ? tableIdOrObj : tableIdOrObj?.tableId;
+  const tableId = typeof tableIdOrObj === "string" ? tableIdOrObj : tableIdOrObj?.tableId;
   if (!tableId) return;
-  socketService.emit('rummy/join_table', { tableId });
+  const deviceId = getDeviceId();
+  const hardwareId = getHardwareSignature();
+  socketService.emit("rummy/join_table", { tableId, deviceId, hardwareId });
 };
+
 export const drawCard = (gameId, _playerId, source) => {
   if (!gameId || !source) return;
-  socketService.emit('rummy/draw_card', { gameId, source });
+  socketService.emit("rummy/draw_card", { gameId, source });
 };
+
 export const discardCard = (gameId, _playerId, card) => {
   if (!gameId || !card) return;
-  socketService.emit('rummy/discard_card', { gameId, card });
+  socketService.emit("rummy/discard_card", { gameId, card });
 };
-export const reorderCards = (gameId, playerId, newOrder) => {
+
+export const reorderCards = (gameId, _playerId, newOrder) => {
   if (!gameId || !Array.isArray(newOrder)) return;
-  socketService.emit('rummy/update_order', { gameId, playerId, newOrder });
+  socketService.emit("rummy/update_order", { gameId, newOrder });
 };
-export const dropGame = (gameId, _playerId) => {
+
+export const dropGame = (gameId) => {
   if (!gameId) return;
-  socketService.emit('rummy/drop', { gameId });
+  socketService.emit("rummy/drop", { gameId });
 };
-export const declareWinSocket = (payload) => {
-  socketService.emit('rummy/declare_win', { payload });
+
+// ✅ FIXED: no wrapper { payload }
+export const declareWinSocket = ({ gameId, playerId, groups, ungrouped }) => {
+  if (!gameId) return;
+  socketService.emit("rummy/declare_win", { gameId, playerId, groups, ungrouped });
 };
 
 const initialState = {
@@ -72,103 +68,108 @@ const initialState = {
   players: [],
   currentTurn: null,
   myCards: [],
-  discardPile: [],
-  drawPile: [],        // 👈 used for top-10 discard history
+
+  discardTop: null,
+  discardHistory: [],
+  drawPileCount: 0,
+
   selectedCards: [],
-  gameStatus: 'waiting',
+  gameStatus: "waiting",
   loading: false,
   error: null,
   notifications: [],
-  gameHistory: [],
+
+  // Points Rummy
+  seatCutResults: null,
+  reviewData: null,
+  votes: {},
 };
 
 const gameSlice = createSlice({
-  name: 'game',
+  name: "game",
   initialState,
   reducers: {
     setGameState: (state, action) => {
       state.gameState = action.payload;
       state.currentGame = action.payload;
     },
+
     setPlayers: (state, action) => {
-      state.players = action.payload || [];
+      const incoming = action.payload || [];
+      const prevById = new Map((state.players || []).map((p) => [String(p.playerId), p]));
+
+      state.players = incoming.map((p) => {
+        const prev = prevById.get(String(p.playerId)) || {};
+        return {
+          ...prev,
+          ...p,
+          connected: p.connected ?? prev.connected ?? true,
+        };
+      });
     },
+
     setCurrentTurn: (state, action) => {
       state.currentTurn = action.payload ?? null;
     },
+
     setMyCards: (state, action) => {
       state.myCards = action.payload || [];
     },
-    addCardToHand: (state, action) => {
-      state.myCards.push(action.payload);
+
+    setDiscardTop: (state, action) => {
+      state.discardTop = action.payload ?? null;
     },
-    removeCardFromHand: (state, action) => {
-      const cardIndex = state.myCards.findIndex(
-        card => card.suit === action.payload.suit && card.rank === action.payload.rank
-      );
-      if (cardIndex !== -1) state.myCards.splice(cardIndex, 1);
+
+    setDiscardHistory: (state, action) => {
+      state.discardHistory = Array.isArray(action.payload) ? action.payload : [];
     },
-    setDiscardPile: (state, action) => {
-      state.discardPile = action.payload || [];
+
+    setDrawPileCount: (state, action) => {
+      state.drawPileCount = Number.isFinite(action.payload) ? action.payload : 0;
     },
-    addToDiscardPile: (state, action) => {
-      if (action.payload) state.discardPile.push(action.payload);
-    },
-    setDrawPile: (state, action) => {
-      console.log('[GAME] setDrawPile called with', action.payload);
-      state.drawPile = action.payload || [];
-    },
-    toggleCardSelection: (state, action) => {
-      const card = action.payload;
-      const key = `${card.suit}-${card.rank}`;
-      const index = state.selectedCards.findIndex(c => `${c.suit}-${c.rank}` === key);
-      if (index !== -1) state.selectedCards.splice(index, 1);
-      else state.selectedCards.push(card);
-    },
-    clearSelectedCards: (state) => {
-      state.selectedCards = [];
-    },
+
     setGameStatus: (state, action) => {
       state.gameStatus = action.payload;
     },
+
     addNotification: (state, action) => {
-      const { type = 'info', message = '', autoDismissMs } = action.payload || {};
-      // ✅ Always keep only the latest notification
+      const { type = "info", message = "", autoDismissMs } = action.payload || {};
       state.notifications = [
         {
           id: Date.now(),
           type,
           message,
-          autoDismissMs: autoDismissMs ?? 4000, // default 4s
+          autoDismissMs: autoDismissMs ?? 4000,
         },
       ];
     },
+
     removeNotification: (state, action) => {
       const id = action.payload;
       state.notifications = state.notifications.filter((n) => n.id !== id);
     },
 
-    clearError: (state) => {
-      state.error = null;
-    },
     resetGame: (state) => {
-      state.currentGame = null;
-      state.gameState = null;
-      state.players = [];
-      state.currentTurn = null;
-      state.myCards = [];
-      state.discardPile = [];
-      state.drawPile = [];
-      state.selectedCards = [];
-      state.gameStatus = 'waiting';
-      state.isMyTurn = false;
-      state.error = null;
-      state.notifications = [];
+      Object.assign(state, initialState);
     },
+
     reorderMyCards: (state, action) => {
       state.myCards = action.payload || [];
     },
+
+    // Points Rummy Features
+    setSeatCutResults: (state, action) => {
+      state.seatCutResults = action.payload;
+    },
+    setReviewData: (state, action) => {
+      state.reviewData = action.payload;
+      state.votes = {}; // Reset votes on new review
+    },
+    setVotes: (state, action) => {
+      state.votes = action.payload || {};
+    },
   },
+
   extraReducers: (builder) => {
     builder
       .addCase(getGameState.pending, (state) => {
@@ -176,48 +177,22 @@ const gameSlice = createSlice({
         state.error = null;
       })
       .addCase(getGameState.fulfilled, (state, action) => {
-        console.log('[GAME] getGameState.fulfilled payload:', action.payload);
-
         state.loading = false;
-        state.gameState = action.payload;
-        state.currentGame = action.payload;
-        state.players = action.payload.players || [];
-        state.currentTurn = action.payload.currentTurn;
 
-        if (Array.isArray(action.payload.drawPileTop)) {
-          state.drawPile = action.payload.drawPileTop;
-        } else if (Array.isArray(action.payload.drawPile)) {
-          state.drawPile = action.payload.drawPile;
-        } else {
-          state.drawPile = [];
-        }
+        const s = action.payload || {};
+        state.gameState = s;
+        state.currentGame = s;
 
-        state.discardPile = [];
-        if (action.payload.discardTop) {
-          state.discardPile.push(action.payload.discardTop);
-        }
+        state.players = s.players || [];
+        state.currentTurn = s.currentTurn ?? null;
+        state.gameStatus = s.status || "waiting";
 
-        state.gameStatus = action.payload.status;
-
-        // ❌ REMOVE this block:
-        // const currentUser = JSON.parse(localStorage.getItem('user'));
-        // if (currentUser) {
-        //   state.isMyTurn = String(action.payload.currentTurn) === String(currentUser.id);
-        // }
+        // ✅ clean + consistent
+        state.discardTop = s.discardTop ?? null;
+        state.discardHistory = Array.isArray(s.discardHistory) ? s.discardHistory : [];
+        state.drawPileCount = Number.isFinite(s.drawPileCount) ? s.drawPileCount : 0;
       })
       .addCase(getGameState.rejected, (state, action) => {
-        state.loading = false;
-        state.error = action.payload;
-      })
-      .addCase(declareWin.pending, (state) => {
-        state.loading = true;
-        state.error = null;
-      })
-      .addCase(declareWin.fulfilled, (state) => {
-        state.loading = false;
-        state.gameStatus = 'ended';
-      })
-      .addCase(declareWin.rejected, (state, action) => {
         state.loading = false;
         state.error = action.payload;
       });
@@ -229,19 +204,17 @@ export const {
   setPlayers,
   setCurrentTurn,
   setMyCards,
-  addCardToHand,
-  removeCardFromHand,
-  setDiscardPile,
-  addToDiscardPile,
-  setDrawPile,
-  toggleCardSelection,
-  clearSelectedCards,
+  setDiscardTop,
+  setDiscardHistory,
+  setDrawPileCount,
   setGameStatus,
   addNotification,
   removeNotification,
-  clearError,
   resetGame,
   reorderMyCards,
+  setSeatCutResults,
+  setReviewData,
+  setVotes,
 } = gameSlice.actions;
 
 export default gameSlice.reducer;
