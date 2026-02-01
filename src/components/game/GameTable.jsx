@@ -25,6 +25,7 @@ import {
   setSeatCutResults,
   setReviewData,
   setVotes,
+  confirmShowSocket,
 } from "../../store/slices/gameSlice";
 
 import PlayerHand from "./PlayerHand";
@@ -69,6 +70,7 @@ const GameTable = () => {
 
   const [handGroups, setHandGroups] = useState({ groups: [], ungrouped: [] });
   const [showDeclareModal, setShowDeclareModal] = useState(false);
+  const [showDropModal, setShowDropModal] = useState(false); // ✅ Drop Confirmation State
   const didUserDrop = useRef(false);
   const [showDiscardHistory, setShowDiscardHistory] = useState(false);
   const [isPortrait, setIsPortrait] = useState(false);
@@ -256,6 +258,7 @@ const GameTable = () => {
       ["rummy/seat_cut_result", onSeatCutResult],
       ["rummy/show_review", onShowReview],
       ["rummy/show_vote_update", onShowVoteUpdate],
+      ["rummy/win_confirmed", onWinDeclared], // ✅ Listen for backend's new win event
     ];
 
     events.forEach(([evt, fn]) => socketService.off(evt, fn));
@@ -280,10 +283,15 @@ const GameTable = () => {
   };
 
   const handleDrop = () => {
+    setShowDropModal(true); // ✅ Show confirmation instead of immediate drop
+  };
+
+  const confirmDrop = () => {
     if (currentGame) {
       didUserDrop.current = true;
       dropGame(currentGame.gameId);
     }
+    setShowDropModal(false);
   };
 
   const handleDeclareWin = () => {
@@ -307,12 +315,34 @@ const GameTable = () => {
     setShowDeclareModal(false);
   };
 
+  // ⚡ DEV CHEAT: Force Win
+  const handleDevWin = () => {
+    if (!currentGame?.gameId || !meId) return;
+
+    // Valid-looking dummy cards (Suit/Rank don't matter due to forceWin, but structure does)
+    const cheatGroups = [
+      [{ rank: "A", suit: "Spades" }, { rank: "2", suit: "Spades" }, { rank: "3", suit: "Spades" }],
+      [{ rank: "K", suit: "Hearts" }, { rank: "K", suit: "Diamonds" }, { rank: "K", suit: "Clubs" }],
+      [{ rank: "7", suit: "Diamonds" }, { rank: "8", suit: "Diamonds" }, { rank: "9", suit: "Diamonds" }, { rank: "10", suit: "Diamonds" }],
+      [{ rank: "5", suit: "Clubs" }, { rank: "6", suit: "Clubs" }, { rank: "7", suit: "Clubs" }]
+    ];
+
+    declareWinSocket({
+      gameId: currentGame.gameId,
+      playerId: meId,
+      groups: cheatGroups,
+      ungrouped: [],
+      forceWin: true // ⚡ Bypass validation
+    });
+  };
+
   const handleGroupsChange = useCallback((data) => setHandGroups(data), []);
 
   const handleVoteSocket = (vote) => {
     const gid = currentGame?.gameId;
     if (!gid) return;
-    socketService.emit("rummy/vote_show", { gameId: gid, vote });
+    // socketService.emit("rummy/vote_show", { gameId: gid, vote });
+    confirmShowSocket(gid, vote ? "YES" : "NO");
   };
 
   if (loading) {
@@ -387,7 +417,13 @@ const GameTable = () => {
                   Declare
                 </button>
                 {/* DEV CHEAT */}
-
+                <button
+                  onClick={handleDevWin}
+                  className="px-2 py-0.5 rounded bg-purple-600 hover:bg-purple-500 text-white text-[10px] font-bold"
+                  title="Force Instant Win (Testing)"
+                >
+                  ⚡ Win
+                </button>
               </>
             )}
           </div>
@@ -543,6 +579,32 @@ const GameTable = () => {
               <button
                 onClick={() => setShowDeclareModal(false)}
                 className="flex-1 px-3 py-2 rounded-lg bg-neutral-200 text-neutral-900 hover:bg-neutral-300 active:scale-95 text-sm font-medium"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ✅ Drop Confirmation Modal */}
+      {showDropModal && (
+        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-3">
+          <div className="bg-neutral-800 border border-red-500/30 rounded-xl p-4 max-w-sm w-full shadow-2xl">
+            <h3 className="text-base font-bold mb-2 text-red-500">Confirm Drop</h3>
+            <p className="text-gray-300 mb-4 text-xs">
+              Are you sure you want to drop? You will likely lose 20 points (First Drop) or 40 points (Middle Drop).
+            </p>
+            <div className="flex gap-2">
+              <button
+                onClick={confirmDrop}
+                className="flex-1 px-3 py-2 rounded-lg bg-red-600 text-white font-semibold hover:bg-red-500 active:scale-95 text-sm"
+              >
+                Yes, Drop
+              </button>
+              <button
+                onClick={() => setShowDropModal(false)}
+                className="flex-1 px-3 py-2 rounded-lg bg-neutral-700 text-neutral-200 hover:bg-neutral-600 active:scale-95 text-sm font-medium"
               >
                 Cancel
               </button>

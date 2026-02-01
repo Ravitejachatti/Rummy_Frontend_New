@@ -1,118 +1,108 @@
+// 📁 src/App.jsx
 import "./index.css";
-import React, { useEffect } from "react";
+import React from "react";
 import { BrowserRouter as Router, Routes, Route, Navigate } from "react-router-dom";
-import { useSelector } from "react-redux";
-import socketService from "./config/socket";
 
-// Pages
+// Pages / Components
 import Layout from "./components/common/Layout";
 import LoginForm from "./components/auth/LoginForm";
 import SignupForm from "./components/auth/SignupForm";
-import Dashboard from "./pages/Dashboard"; // simplified below
-import Lobby from "./pages/Lobby";          // simplified below
-import GameTable from "./components/game/GameTable"; // simplified below
-import Profile from "./pages/profile";      // new minimal page
+import Dashboard from "./pages/Dashboard";
+import Lobby from "./pages/Lobby";
+import GameTable from "./components/game/GameTable";
+import Profile from "./pages/profile";
 import RummyResult from "./components/game/Rummyresult";
 
-const ProtectedRoute = ({ children }) => {
-  const { isAuthenticated } = useSelector((s) => s.auth);
-  return isAuthenticated ? children : <Navigate to="/login" />;
-};
-const PublicRoute = ({ children }) => {
-  const { isAuthenticated } = useSelector((s) => s.auth);
-  return !isAuthenticated ? children : <Navigate to="/dashboard" />;
-};
+// ✅ Production managers
+import AuthGate from "./core/AuthGate";
+import SocketManager from "./core/SocketManager";
 
-function App() {
-  const { isAuthenticated, accessToken } = useSelector((s) => s.auth);
-  console.log("App render - isAuthenticated:", isAuthenticated);
-  console.log("App render - token:", accessToken);
+const ProtectedRoute = ({ children }) => <AuthGate>{children}</AuthGate>;
+const PublicRoute = ({ children }) => <AuthGate publicOnly>{children}</AuthGate>;
 
-  useEffect(() => {
-    if (isAuthenticated && accessToken) {
-      socketService.connect(accessToken);
-    }
-    return () => socketService.disconnect();
-  }, [isAuthenticated, accessToken]);
-
+export default function App() {
   return (
-    <Router>
-      <Routes>
-        {/* Public */}
-        <Route
-          path="/login"
-          element={
-            <PublicRoute>
-              <LoginForm />
-            </PublicRoute>
-          }
-        />
-        <Route
-          path="/signup"
-          element={
-            <PublicRoute>
-              <SignupForm />
-            </PublicRoute>
-          }
-        />
+    <>
+      {/* ✅ runs once, manages socket connect/disconnect */}
+      <SocketManager />
 
-        {/* Protected */}
-        <Route
-          path="/dashboard"
-          element={
-            <ProtectedRoute>
-              <Layout>
-                <Dashboard />
-              </Layout>
-            </ProtectedRoute>
-          }
-        />
+      <Router>
+        <Routes>
+          {/* Public */}
+          <Route
+            path="/login"
+            element={
+              <PublicRoute>
+                <LoginForm />
+              </PublicRoute>
+            }
+          />
+          <Route
+            path="/signup"
+            element={
+              <PublicRoute>
+                <SignupForm />
+              </PublicRoute>
+            }
+          />
 
-        <Route
-          path="/profile"
-          element={
-            <ProtectedRoute>
-              <Layout>
-                <Profile />
-              </Layout>
-            </ProtectedRoute>
-          }
-        />
+          {/* Protected */}
+          <Route
+            path="/dashboard"
+            element={
+              <ProtectedRoute>
+                <Layout>
+                  <Dashboard />
+                </Layout>
+              </ProtectedRoute>
+            }
+          />
 
-        <Route
-          path="/lobby/:tableId"
-          element={
-            <ProtectedRoute>
-              <Layout>
-                <Lobby />
-              </Layout>
-            </ProtectedRoute>
-          }
-        />
+          <Route
+            path="/profile"
+            element={
+              <ProtectedRoute>
+                <Layout>
+                  <Profile />
+                </Layout>
+              </ProtectedRoute>
+            }
+          />
 
-        <Route
-          path="/game/:tableId"
-          element={
-            <ProtectedRoute>
-              <GameTable />
-            </ProtectedRoute>
-          }
-        />
+          <Route
+            path="/lobby/:tableId"
+            element={
+              <ProtectedRoute>
+                <Layout>
+                  <Lobby />
+                </Layout>
+              </ProtectedRoute>
+            }
+          />
 
-        <Route
-          path="/rummy/result/:gameId"
-          element={
-            <ProtectedRoute>
-              <RummyResult />
-            </ProtectedRoute>
-          }
-        />
+          <Route
+            path="/game/:tableId"
+            element={
+              <ProtectedRoute>
+                <GameTable />
+              </ProtectedRoute>
+            }
+          />
 
-        {/* Defaults */}
-        <Route path="/" element={<Navigate to="/dashboard" />} />
-        <Route path="*" element={<Navigate to="/dashboard" />} />
-      </Routes>
-    </Router>
+          <Route
+            path="/rummy/result/:gameId"
+            element={
+              <ProtectedRoute>
+                <RummyResult />
+              </ProtectedRoute>
+            }
+          />
+
+          {/* Defaults */}
+          <Route path="/" element={<Navigate to="/dashboard" replace />} />
+          <Route path="*" element={<Navigate to="/dashboard" replace />} />
+        </Routes>
+      </Router>
+    </>
   );
 }
-export default App;

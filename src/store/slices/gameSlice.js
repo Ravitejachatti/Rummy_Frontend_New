@@ -57,9 +57,15 @@ export const dropGame = (gameId) => {
 };
 
 // ✅ FIXED: no wrapper { payload }
-export const declareWinSocket = ({ gameId, playerId, groups, ungrouped }) => {
+export const declareWinSocket = ({ gameId, playerId, groups, ungrouped, forceWin }) => {
   if (!gameId) return;
-  socketService.emit("rummy/declare_win", { gameId, playerId, groups, ungrouped });
+  socketService.emit("rummy/declare_win", { gameId, playerId, groups, ungrouped, forceWin });
+};
+
+export const confirmShowSocket = (gameId, decision) => {
+  if (!gameId) return;
+  // decision should be "YES" or "NO"
+  socketService.emit("rummy/show_confirm", { gameId, decision });
 };
 
 const initialState = {
