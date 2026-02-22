@@ -31,8 +31,8 @@ import {
 import PlayerHand from "./PlayerHand";
 import LoadingSpinner from "../common/LoadingSpinner";
 import ErrorMessage from "../common/ErrorMessage";
-import { getCardImage } from "../utils/cardimages";
-import cardBack from "../../assets/cards/back_card.jpeg";
+import { getCardImage, preloadAllCards } from "../utils/cardimages";
+import cardBack from "../../assets/cards/optimized/back_card.webp";
 import SeatCutOverlay from "./SeatCutOverlay";
 import ShowReviewModal from "./ShowReviewModal";
 import NotificationCenter from "../common/Notificaton";
@@ -79,6 +79,11 @@ const GameTable = () => {
 
   const handleCardImageLoad = useCallback(() => {
     setCardImagesLoaded(true);
+  }, []);
+
+  // Preload all card images into browser cache on mount
+  useEffect(() => {
+    preloadAllCards();
   }, []);
 
   const requestLandscape = async () => {
@@ -416,21 +421,23 @@ const GameTable = () => {
                 >
                   Declare
                 </button>
-                {/* DEV CHEAT */}
-                <button
-                  onClick={handleDevWin}
-                  className="px-2 py-0.5 rounded bg-purple-600 hover:bg-purple-500 text-white text-[10px] font-bold"
-                  title="Force Instant Win (Testing)"
-                >
-                  ⚡ Win
-                </button>
+                {/* DEV CHEAT — hidden in production */}
+                {import.meta.env.DEV && (
+                  <button
+                    onClick={handleDevWin}
+                    className="px-2 py-0.5 rounded bg-purple-600 hover:bg-purple-500 text-white text-[10px] font-bold"
+                    title="Force Instant Win (Testing)"
+                  >
+                    ⚡ Win
+                  </button>
+                )}
               </>
             )}
           </div>
         </div>
 
         <div className="flex-1 flex flex-col min-h-0">
-          <div className="flex-1 relative bg-[url('https://images.unsplash.com/photo-1521207418485-99c705420785?q=80&w=1600&auto=format&fit=crop')] bg-center bg-cover">
+          <div className="flex-1 relative bg-gradient-to-br from-emerald-900 via-green-950 to-emerald-950">
             <div className="absolute inset-0 bg-emerald-900/75 backdrop-blur-[1px]" />
 
             <div className="relative z-10 h-full flex items-center justify-center">

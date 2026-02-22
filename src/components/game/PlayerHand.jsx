@@ -78,6 +78,9 @@ function PlayingCard({ card, size = "sm", selected = false, onClick }) {
           src={imgSrc}
           alt={`${card.rank} of ${card.suit}`}
           className="w-full h-full object-contain"
+          width={200}
+          height={280}
+          loading="lazy"
           draggable={false}
         />
       ) : (
