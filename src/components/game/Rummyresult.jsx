@@ -1,112 +1,248 @@
-// client/src/pages/RummyResult.jsx
-import React from "react";
-import { useLocation, useParams, Link, useNavigate } from "react-router-dom";
+// 📁 src/components/game/Rummyresult.jsx
+// ═══════════════════════════════════════════════════
+// Indian Rummy – Enhanced Game Result Screen
+// ═══════════════════════════════════════════════════
+import React, { useEffect, useState } from "react";
+import { useLocation, useParams, useNavigate } from "react-router-dom";
+import api from "../../config/api";
+import { leaveTable } from "../../store/slices/gameSlice";
+
+function normalizeResultPayload(payload = {}) {
+  const data = payload?.data && typeof payload.data === "object" ? payload.data : payload;
+  const winner = data.winner || data.winnerId || data.result?.winner || null;
+  const losers = Array.isArray(data.losers)
+    ? data.losers
+    : Array.isArray(data.result?.losers)
+      ? data.result.losers
+      : Array.isArray(data.players)
+        ? data.players.filter((p) => String(p.playerId) !== String(winner))
+        : [];
+  return {
+    ...data,
+    winner,
+    losers,
+    tableId: data.tableId || data.result?.tableId || null,
+    settlementStatus: data.settlementStatus || data.settlement?.status || data.status || null,
+  };
+}
 
 const RummyResult = () => {
   const { state } = useLocation();
   const { gameId } = useParams();
   const navigate = useNavigate();
 
-  const [countdown, setCountdown] = React.useState(7);
+  const [countdown, setCountdown] = useState(7);
+  const [showConfetti, setShowConfetti] = useState(false);
+  const [fallbackResult, setFallbackResult] = useState(null);
+  const [resultError, setResultError] = useState("");
 
-  const winner = state?.winner;
-  const isYou = !!state?.isYou;
-  const losers = state?.losers || [];
+  const result = state?.winner || state?.losers?.length ? state : fallbackResult;
+  const winner = result?.winner;
+  const userId = (() => {
+    try { return JSON.parse(localStorage.getItem("user") || "{}")._id || JSON.parse(localStorage.getItem("user") || "{}").id; } catch { return null; }
+  })();
+  const isYou = state?.isYou ?? (winner && userId ? String(winner) === String(userId) : false);
+  const losers = result?.losers || [];
+  const tableIdFromGame = result?.tableId || state?.tableId || (gameId?.startsWith("GM-") ? gameId.split("-")[1] : null);
 
-  // Extract tableId safely. Assuming format GM-{tableId}-{uuid} or passed in state
-  const tableIdFromGame = state?.tableId || (gameId?.startsWith("GM-") ? gameId.split("-")[1] : null);
+  // Fallback fetch for direct refresh/open of result page.
+  useEffect(() => {
+    let alive = true;
+    if (!gameId || state?.winner || state?.losers?.length) return undefined;
 
-  React.useEffect(() => {
+    const fetchResult = async () => {
+      try {
+        const res = await api.get(`/api/rummy/games/${gameId}/result`);
+        if (alive) setFallbackResult(normalizeResultPayload(res.data));
+      } catch (primaryErr) {
+        try {
+          const legacy = await api.get(`/api/rummy/game/result/${gameId}`);
+          if (alive) setFallbackResult(normalizeResultPayload(legacy.data));
+        } catch (err) {
+          if (alive) setResultError(err?.response?.data?.error || err?.response?.data?.message || "Could not load game result");
+        }
+      }
+    };
+
+    fetchResult();
+    return () => { alive = false; };
+  }, [gameId, state?.winner, state?.losers?.length]);
+
+  // Confetti for winner
+  useEffect(() => {
+    if (isYou) {
+      setShowConfetti(true);
+      const timer = setTimeout(() => setShowConfetti(false), 4000);
+      return () => clearTimeout(timer);
+    }
+  }, [isYou]);
+
+  // Auto-navigate countdown
+  useEffect(() => {
     if (!tableIdFromGame) return;
-
     const timer = setInterval(() => {
       setCountdown((prev) => {
         if (prev <= 1) {
           clearInterval(timer);
-          console.log("[DEBUG] RummyResult: timer ended. state:", state);
-          const dest = state?.dropped ? "/dashboard" : `/game/${tableIdFromGame}`;
-          console.log("[DEBUG] RummyResult: tableIdFromGame:", tableIdFromGame);
-          console.log("[DEBUG] RummyResult: Navigating to:", dest);
-          navigate(dest);
+          if (state?.dropped) {
+            leaveTable(tableIdFromGame);
+            navigate("/dashboard");
+          } else {
+            navigate(`/game/${tableIdFromGame}`);
+          }
           return 0;
         }
         return prev - 1;
       });
     }, 1000);
-
     return () => clearInterval(timer);
-  }, [tableIdFromGame, navigate]);
-
-  const handleLeave = () => {
-    navigate("/");
-  };
+  }, [tableIdFromGame, navigate, state?.dropped]);
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-emerald-900 via-emerald-950 to-black text-white p-6">
-      <div className="w-full max-w-lg bg-black/40 border border-white/10 rounded-2xl p-6 shadow-2xl">
-        <h1 className="text-2xl font-semibold mb-2">Game Result</h1>
-        <p className="text-white/80 text-sm mb-6">
-          Game ID: <span className="font-mono">{gameId}</span>
-        </p>
+    <div className="min-h-screen flex items-center justify-center text-white p-4 relative overflow-hidden"
+      style={{ background: "linear-gradient(135deg, #0a1f12 0%, #000 50%, #0a1f12 100%)" }}
+    >
+      {/* Confetti particles */}
+      {showConfetti && (
+        <div className="fixed inset-0 pointer-events-none z-50">
+          {Array.from({ length: 40 }).map((_, i) => (
+            <div
+              key={i}
+              className="absolute w-2 h-2 rounded-full"
+              style={{
+                left: `${Math.random() * 100}%`,
+                top: `-${Math.random() * 10}%`,
+                background: ["#fbbf24", "#ef4444", "#10b981", "#38bdf8", "#f59e0b", "#a855f7"][i % 6],
+                animation: `confetti-fall ${2 + Math.random() * 3}s linear ${Math.random() * 2}s forwards`,
+              }}
+            />
+          ))}
+        </div>
+      )}
 
-        {winner ? (
-          <>
-            <div className="mb-6">
-              <div className="text-lg">
-                Winner:&nbsp;
-                <span className="font-bold">
-                  {String(winner)}
-                </span>
+      <div className="w-full max-w-lg relative z-10">
+        {/* Result card */}
+        <div className="rounded-2xl p-6 shadow-2xl animate-slide-in-up"
+          style={{
+            background: "linear-gradient(135deg, rgba(30,30,30,0.9) 0%, rgba(10,31,18,0.9) 100%)",
+            border: isYou ? "1px solid rgba(251,191,36,0.3)" : "1px solid rgba(255,255,255,0.1)",
+            boxShadow: isYou ? "0 0 40px rgba(251,191,36,0.15)" : "none",
+          }}
+        >
+          {/* Winner banner */}
+          {winner ? (
+            <div className="text-center mb-6">
+              <div className="text-4xl mb-2 animate-bounce-in" style={{ animationDelay: "0.2s" }}>
+                {isYou ? "🏆" : "🎮"}
               </div>
-              <div className="mt-2 text-emerald-300">
-                {isYou ? "🎉 You won! Great job." : "Game over."}
-              </div>
+              <h1 className="text-2xl font-bold mb-1">
+                {isYou ? "You Won!" : "Game Over"}
+              </h1>
+              <p className="text-sm" style={{ color: isYou ? "var(--gold-bright)" : "rgba(255,255,255,0.5)" }}>
+                {isYou ? "Congratulations! Great hand." : `Winner: ${String(winner).slice(0, 12)}…`}
+              </p>
             </div>
+          ) : (
+            <div className="text-center mb-6">
+              <div className="text-3xl mb-2">🎮</div>
+              <h1 className="text-xl font-bold">Game Ended</h1>
+              {resultError && <p className="text-xs text-red-300 mt-2">{resultError}</p>}
+            </div>
+          )}
 
-            {losers.length > 0 && (
-              <div className="mb-6">
-                <div className="text-sm text-white/70 mb-2">Other players</div>
-                <ul className="space-y-2">
-                  {losers.map((l) => (
-                    <li
-                      key={l.playerId}
-                      className="flex items-center justify-between bg-white/5 rounded-lg px-3 py-2"
-                    >
-                      <span className="font-mono">{l.playerId}</span>
-                      {"points" in l && (
-                        <span className="text-white/70 text-xs">
-                          {l.points} pts
-                        </span>
-                      )}
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            )}
-          </>
-        ) : (
-          <div className="mb-6 text-white/80">Game ended.</div>
-        )}
-
-        <div className="mt-8 flex flex-col gap-3">
-          <div className="text-center text-sm text-emerald-400 font-medium animate-pulse mb-1">
-            Starting next game in {countdown}s...
+          {/* Game ID */}
+          <div className="text-center mb-4">
+            <span className="text-[10px] text-white/30 uppercase tracking-wider">Game ID</span>
+            <div className="font-mono text-xs text-white/50 mt-0.5 truncate">{gameId}</div>
           </div>
 
-          <div className="flex gap-3">
-            <button
-              onClick={() => navigate(state?.dropped ? "/dashboard" : `/game/${tableIdFromGame || ""}`)}
-              className="flex-1 py-3 rounded-xl bg-emerald-500 text-black font-bold shadow-lg hover:bg-emerald-400 active:scale-95 transition-all text-sm uppercase tracking-wide"
+          {/* Losers / Other Players */}
+          {losers.length > 0 && (
+            <div className="mb-6">
+              <h3 className="text-xs font-semibold text-white/50 uppercase tracking-wider mb-2">Scoreboard</h3>
+              <div className="space-y-1.5">
+                {/* Winner row */}
+                <div className="flex items-center justify-between rounded-lg px-3 py-2"
+                  style={{ background: "rgba(251,191,36,0.08)", border: "1px solid rgba(251,191,36,0.15)" }}
+                >
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm">🏆</span>
+                    <span className="text-sm font-medium text-amber-400">
+                      {isYou ? "You" : String(winner).slice(0, 12)}
+                    </span>
+                  </div>
+                  <span className="text-xs font-bold text-emerald-400">0 pts</span>
+                </div>
+
+                {/* Loser rows */}
+                {losers.map((l, idx) => (
+                  <div
+                    key={l.playerId || idx}
+                    className="flex items-center justify-between rounded-lg px-3 py-2"
+                    style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.05)" }}
+                  >
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs text-white/30">#{idx + 2}</span>
+                      <span className="text-sm font-medium text-white/70 truncate max-w-[140px]">
+                        {String(l.playerId).slice(0, 12)}
+                      </span>
+                    </div>
+                    {"points" in l && (
+                      <span className="text-xs font-bold text-red-400">{l.points} pts</span>
+                    )}
+                  </div>
+                ))}
+               </div>
+            </div>
+          )}
+
+          {/* Countdown + Actions */}
+          <div className="mt-6">
+            {/* Progress bar */}
+            <div className="h-1 w-full rounded-full overflow-hidden mb-2"
+              style={{ background: "rgba(255,255,255,0.05)" }}
             >
-              {state?.dropped ? "Return to Lobby" : "Continue Now"}
-            </button>
-            <button
-              onClick={handleLeave}
-              className="px-6 py-3 rounded-xl bg-red-900/40 border border-red-500/30 text-red-200 font-semibold hover:bg-red-900/60 active:scale-95 transition-all text-sm"
-              title="Leave the table logic"
-            >
-              Leave & Quit
-            </button>
+              <div
+                className="h-full rounded-full transition-all duration-1000"
+                style={{
+                  width: `${(countdown / 7) * 100}%`,
+                  background: "var(--gold)",
+                }}
+              />
+            </div>
+            <p className="text-center text-[10px] mb-4" style={{ color: "var(--gold-dim)" }}>
+              {state?.dropped ? "Returning to lobby" : "Next game"} in {countdown}s…
+            </p>
+
+            <div className="flex gap-2">
+              <button
+                onClick={() => {
+                  if (state?.dropped) {
+                    leaveTable(tableIdFromGame);
+                    navigate("/dashboard");
+                  } else {
+                    navigate(`/game/${tableIdFromGame || ""}`);
+                  }
+                }}
+                className="btn-declare flex-1 py-3 text-sm"
+              >
+                {state?.dropped ? "Return to Lobby" : "Continue Now"}
+              </button>
+              <button
+                onClick={() => {
+                  leaveTable(tableIdFromGame);
+                  navigate("/");
+                }}
+                className="px-4 py-3 rounded-xl text-sm font-semibold transition-all active:scale-95"
+                style={{
+                  background: "rgba(239,68,68,0.1)",
+                  border: "1px solid rgba(239,68,68,0.2)",
+                  color: "rgba(239,68,68,0.8)",
+                }}
+              >
+                Leave
+              </button>
+            </div>
           </div>
         </div>
       </div>

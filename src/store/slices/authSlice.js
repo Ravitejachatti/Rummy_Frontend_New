@@ -98,7 +98,15 @@ const authSlice = createSlice({
 reducers: {
   clearError: (state) => { state.error = null; },
   setUser: (state, action) => { state.user = action.payload; },
-  bootstrapped: (state) => { state.bootstrapped = true; }, 
+  bootstrapped: (state) => { state.bootstrapped = true; },
+  localLogout: (state) => {
+    state.user = null;
+    state.accessToken = null;
+    state.isAuthenticated = false;
+    state.bootstrapped = true;
+    state.loading = false;
+    state.error = null;
+  },
 },
   extraReducers: (builder) => {
     builder
@@ -165,5 +173,5 @@ reducers: {
   },
 });
 
-export const { clearError, setUser, bootstrapped } = authSlice.actions;
+export const { clearError, setUser, bootstrapped, localLogout } = authSlice.actions;
 export default authSlice.reducer;

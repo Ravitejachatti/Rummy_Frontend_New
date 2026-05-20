@@ -41,13 +41,14 @@ function logoutAndRedirect(message) {
   if (isLoggingOut) return;
   isLoggingOut = true;
 
-  if (message) alert(message);
-
-  // ✅ auth state will flip to unauthenticated elsewhere, SocketManager will disconnect.
   localStorage.removeItem("accessToken");
   localStorage.removeItem("user");
 
-  window.location.href = "/login";
+  window.dispatchEvent(
+    new CustomEvent("auth:logout", {
+      detail: { message: message || "Your session has expired. Please sign in again." },
+    })
+  );
 }
 
 async function getNewAccessToken() {

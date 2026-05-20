@@ -46,6 +46,7 @@ const WalletManager = () => {
     }
   };
 
+  const isAdmin = user?.role === 'admin';
   const quickAmounts = [100, 500, 1000, 2500, 5000];
 
   return (
@@ -85,32 +86,45 @@ const WalletManager = () => {
       {/* Action Buttons */}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
         <button
-          onClick={() => setShowAddModal(true)}
-          className="card hover:shadow-lg transition-shadow cursor-pointer border-2 border-dashed border-success-300 hover:border-success-400 p-4 sm:p-6"
+          onClick={() => isAdmin && setShowAddModal(true)}
+          disabled={!isAdmin}
+          title={!isAdmin ? 'Player deposits require a payment API. This backend route is admin-only.' : 'Admin chip credit'}
+          className={`card hover:shadow-lg transition-shadow border-2 border-dashed border-success-300 hover:border-success-400 p-4 sm:p-6 ${!isAdmin ? 'opacity-60 cursor-not-allowed' : 'cursor-pointer'}`}
         >
           <div className="flex flex-col sm:flex-row items-center justify-center text-success-600 space-y-2 sm:space-y-0">
             <PlusIcon className="h-6 w-6 sm:h-8 sm:w-8 sm:mr-3" />
             <div className="text-left">
               <h3 className="text-base sm:text-lg font-semibold text-center sm:text-left">Add Chips</h3>
-              <p className="text-xs sm:text-sm text-gray-600 text-center sm:text-left">Purchase more chips to play</p>
+              <p className="text-xs sm:text-sm text-gray-600 text-center sm:text-left">
+                {isAdmin ? 'Admin chip credit' : 'Payment API required'}
+              </p>
             </div>
           </div>
         </button>
 
         <button
-          onClick={() => setShowWithdrawModal(true)}
-          disabled={balance === 0}
+          onClick={() => isAdmin && setShowWithdrawModal(true)}
+          disabled={!isAdmin || balance === 0}
+          title={!isAdmin ? 'Player withdrawals require a withdrawal API. This backend route is admin-only.' : 'Admin chip debit'}
           className="card hover:shadow-lg transition-shadow cursor-pointer border-2 border-dashed border-warning-300 hover:border-warning-400 disabled:opacity-50 disabled:cursor-not-allowed p-4 sm:p-6"
         >
           <div className="flex flex-col sm:flex-row items-center justify-center text-warning-600 space-y-2 sm:space-y-0">
             <MinusIcon className="h-6 w-6 sm:h-8 sm:w-8 sm:mr-3" />
             <div className="text-left">
               <h3 className="text-base sm:text-lg font-semibold text-center sm:text-left">Withdraw Chips</h3>
-              <p className="text-xs sm:text-sm text-gray-600 text-center sm:text-left">Cash out your chips</p>
+              <p className="text-xs sm:text-sm text-gray-600 text-center sm:text-left">
+                {isAdmin ? 'Admin chip debit' : 'Withdrawal API required'}
+              </p>
             </div>
           </div>
         </button>
       </div>
+
+      {!isAdmin && (
+        <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs sm:text-sm text-amber-800">
+          Player deposit/withdrawal is disabled because the current backend wallet add/withdraw routes are admin-only and require idempotency headers. Add real payment and withdrawal APIs before enabling this for players.
+        </div>
+      )}
 
       {/* Recent Transactions */}
       <div className="card">

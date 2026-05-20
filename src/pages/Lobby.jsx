@@ -1,492 +1,279 @@
-// client/src/pages/Lobby.jsx
-import React, { useEffect, useMemo, useState } from "react";
+// 📁 src/pages/Lobby.jsx
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useDispatch, useSelector } from "react-redux";
-import { useNavigate, useParams, Link } from "react-router-dom";
+import { Link, useNavigate, useParams } from "react-router-dom";
+import { ArrowLeft, CheckCircle2, Clock3, Coins, Loader2, Lock, RotateCcw, ShieldCheck, Users, Volume2, Wifi } from "lucide-react";
 import socketService from "../config/socket";
 import { fetchTables } from "../store/slices/tableSlice";
-import {
-  joinTable,
-  setPlayers,
-  setCurrentTurn,
-  addNotification,
-  setGameStatus,
-} from "../store/slices/gameSlice";
+import { addNotification, joinTable, setCurrentTurn, setGameStatus, setPlayers } from "../store/slices/gameSlice";
 import LoadingSpinner from "../components/common/LoadingSpinner";
 import ErrorMessage from "../components/common/ErrorMessage";
+import { normalizeErrorMessage } from "../utils/normalizeError";
+import { normalizeGameStatePayload } from "../utils/normalizeGameSocketPayload";
+import useSound from "../hooks/useSound";
+
+function getJoinedPlayers(statePlayers, table) {
+  if (Array.isArray(statePlayers) && statePlayers.length) return statePlayers;
+  if (Array.isArray(table?.players)) return table.players;
+  if (Array.isArray(table?.currentPlayers)) return table.currentPlayers;
+  return [];
+}
+
+function isGameStartedState(state) {
+  const phase = String(state?.phase || "").toUpperCase();
+  const status = String(state?.status || "").toLowerCase();
+  return Boolean(state?.gameId || state?.activeGameId || phase === "PLAYING" || status === "playing");
+}
 
 export default function Lobby() {
   const { tableId } = useParams();
   const navigate = useNavigate();
   const dispatch = useDispatch();
+  const { play, unlock } = useSound();
 
   const { user } = useSelector((s) => s.auth);
-  const {
-    tables = [],
-    loading: tablesLoading,
-    error: tablesError,
-  } = useSelector((s) => s.table);
+  const { tables = [], loading: tablesLoading, error: tablesError } = useSelector((s) => s.table);
   const { players = [], currentTurn, gameStatus } = useSelector((s) => s.game);
 
-  // ✅ unified id
+  const [joining, setJoining] = useState(true);
+  const [socketReady, setSocketReady] = useState(false);
+  const [statusText, setStatusText] = useState("Connecting to table…");
+  const [gameId, setGameId] = useState(null);
+  const [flowPhase, setFlowPhase] = useState("LOBBY");
+
+  const joinSentRef = useRef(false);
+  const gameStartedRef = useRef(false);
+  const navigatedRef = useRef(false);
+  const lastPlayerCountRef = useRef(0);
+
   const meId = user?._id || user?.id || user?.userId;
 
-  const [joining, setJoining] = useState(true);
-  const [cutInfo, setCutInfo] = useState(null);
-  const [isChooser, setIsChooser] = useState(false);
-  const [choosingSeat, setChoosingSeat] = useState(false);
-  const [gameId, setGameId] = useState(null);
-
-  // SEAT_CHOICE → AWAIT_SHUFFLE → AWAIT_CUT → PLAYING
-  const [flowPhase, setFlowPhase] = useState(null);
-
-  const orderedPlayers = useMemo(() => {
-    if (!Array.isArray(players)) return [];
-    return [...players].sort((a, b) => {
-      const sa = typeof a.seatIndex === "number" ? a.seatIndex : 999;
-      const sb = typeof b.seatIndex === "number" ? b.seatIndex : 999;
-      if (sa !== sb) return sa - sb;
-      return String(a.playerId).localeCompare(String(b.playerId));
-    });
-  }, [players]);
-
-  const me = useMemo(
-    () => orderedPlayers.find((p) => String(p.playerId) === String(meId)),
-    [orderedPlayers, meId]
-  );
-
   useEffect(() => {
-    if (!tables || tables.length === 0) {
-      dispatch(fetchTables());
-    }
+    if (!tables?.length) dispatch(fetchTables());
   }, [dispatch, tables?.length]);
 
-  const table = useMemo(
-    () => tables.find((t) => String(t._id) === String(tableId)) || null,
-    [tables, tableId]
-  );
+  const table = useMemo(() => tables.find((t) => String(t._id) === String(tableId)) || null, [tables, tableId]);
+  const joinedPlayers = useMemo(() => getJoinedPlayers(players, table), [players, table]);
+  const joinedCount = joinedPlayers.length;
+  const maxPlayers = Number(table?.maxPlayers || 6);
+  const minPlayers = Number(table?.minPlayers || 2);
+  const entry = Number(table?.bankRange ?? table?.chipValue ?? 0);
+  const seats = Array.from({ length: maxPlayers }, (_, i) => joinedPlayers[i] || null);
+  const meSeated = joinedPlayers.some((p) => String(p.playerId || p.userId || p._id) === String(meId));
+  const progressPct = Math.min(100, Math.round((joinedCount / Math.max(minPlayers, 1)) * 100));
+
+  useEffect(() => {
+    if (joinedCount > lastPlayerCountRef.current) play("turnNotify", 0.035);
+    lastPlayerCountRef.current = joinedCount;
+  }, [joinedCount, play]);
 
   useEffect(() => {
     if (!tableId || !user) return;
 
-    let cancelled = false;
-
-    // ✅ connect once, attach listeners first, join on connect (prevents missing rummy/state)
     const token = localStorage.getItem("accessToken") || "";
     const socket = socketService.connect(token);
 
-    const doJoin = () => joinTable(tableId);
-
-    const onPlayerConnected = () => {
-      dispatch(addNotification({ type: "info", message: "A player connected" }));
-    };
-
-    const onPlayerDisconnected = () => {
-      dispatch(addNotification({ type: "warning", message: "A player disconnected" }));
-    };
-
-    const onState = (s) => {
-      if (s?.gameId) setGameId(s.gameId);
-
-      // ✅ backend sends `phase` not `flowPhase` (keep your local flowPhase state for UI)
-      if (s?.phase) setFlowPhase(s.phase);
-
-      if (Array.isArray(s?.players)) dispatch(setPlayers(s.players));
-      if (typeof s?.currentTurn !== "undefined") dispatch(setCurrentTurn(s.currentTurn));
-      if (s?.status) dispatch(setGameStatus(s.status));
-
-      // ✅ don’t send spectators to game screen
-      if (s?.status === "playing" && s?.role !== "spectator") {
-        navigate(`/game/${tableId}`, { replace: true });
-      }
-    };
-
-    const onGameStarted = (payload) => {
+    const goToGame = (payload = {}) => {
+      if (navigatedRef.current) return;
+      navigatedRef.current = true;
+      gameStartedRef.current = true;
       if (payload?.gameId) setGameId(payload.gameId);
-      if (Array.isArray(payload?.players)) dispatch(setPlayers(payload.players));
-      if (typeof payload?.currentTurn !== "undefined") dispatch(setCurrentTurn(payload.currentTurn));
-
-      dispatch(setGameStatus("playing"));
-      setFlowPhase("PLAYING");
+      play("winFanfare", 0.05);
       navigate(`/game/${tableId}`, { replace: true });
     };
 
-    const onCutResults = (payload) => {
-      if (payload?.gameId) setGameId(payload.gameId);
-
-      setCutInfo(payload);
-      setFlowPhase(payload.flowPhase || "SEAT_CHOICE");
-
-      const chooser = payload.chooserId;
-      const iamChooser = meId && String(meId) === String(chooser);
-
-      setIsChooser(iamChooser);
-      setChoosingSeat(iamChooser);
-
-      if (iamChooser) {
-        dispatch(addNotification({ type: "info", message: "You got the highest cut! Choose your seat." }));
-      } else {
-        dispatch(
-          addNotification({
-            type: "info",
-            message: "Cut complete. Waiting for highest-cut player to choose a seat…",
-          })
-        );
-      }
+    const doJoin = () => {
+      if (joinSentRef.current || gameStartedRef.current) return;
+      joinSentRef.current = true;
+      setJoining(true);
+      setStatusText("Securing seat and reserving chips…");
+      unlock();
+      joinTable(tableId);
     };
 
-    const onSeatingFinalized = (payload) => {
-      if (payload?.gameId) setGameId(payload.gameId);
-
-      setCutInfo(null);
-      setIsChooser(false);
-      setChoosingSeat(false);
-
-      if (payload?.flowPhase) setFlowPhase(payload.flowPhase);
-
-      if (Array.isArray(payload?.players)) {
-        dispatch(setPlayers(payload.players));
-      }
+    const onConnect = () => {
+      setSocketReady(true);
+      setStatusText("Connected. Joining table…");
+      doJoin();
     };
 
-    const onShuffleApplied = (payload) => {
-      if (payload?.gameId) setGameId(payload.gameId);
-      if (payload?.nextPhase) setFlowPhase(payload.nextPhase);
-
-      dispatch(
-        addNotification({
-          type: "info",
-          message: "Shuffler has shuffled the deck. Waiting for cutter…",
-        })
-      );
+    const onDisconnect = () => {
+      setSocketReady(false);
+      setStatusText("Reconnecting… your seat is protected.");
     };
 
-    const onCutApplied = (payload) => {
-      if (payload?.gameId) setGameId(payload.gameId);
-      if (payload?.nextPhase) setFlowPhase(payload.nextPhase);
-
-      dispatch(
-        addNotification({
-          type: "info",
-          message: "Cutter has cut the deck. Dealing cards…",
-        })
-      );
+    const onState = (payload = {}) => {
+      const state = normalizeGameStatePayload(payload);
+      setJoining(false);
+      if (state?.gameId) setGameId(state.gameId);
+      if (state?.phase) setFlowPhase(state.phase);
+      if (Array.isArray(state?.players)) dispatch(setPlayers(state.players));
+      if (typeof state?.currentTurn !== "undefined") dispatch(setCurrentTurn(state.currentTurn));
+      if (state?.status) dispatch(setGameStatus(state.status));
+      if (isGameStartedState(state) && state?.role !== "spectator") goToGame(state);
+      else setStatusText("Waiting for players…");
     };
 
-    const onSpectatorJoined = (payload) => {
-      dispatch(addNotification({ type: "info", message: payload?.message || "You joined as spectator." }));
+    const onGameStarted = (payload = {}) => {
+      const state = normalizeGameStatePayload(payload);
+      if (Array.isArray(state?.players)) dispatch(setPlayers(state.players));
+      if (typeof state?.currentTurn !== "undefined") dispatch(setCurrentTurn(state.currentTurn));
+      dispatch(setGameStatus(state.status || "PLAYING"));
+      setFlowPhase(state.phase || "PLAYING");
+      goToGame(state);
     };
 
-    const onInfo = (m) => {
-      dispatch(addNotification({ type: "info", message: String(m || "") }));
+    const onError = (msg) => {
+      const message = normalizeErrorMessage(msg, "Unable to join table");
+      setJoining(false);
+      setStatusText(message);
+      dispatch(addNotification({ type: "error", message }));
+      play("error", 0.045);
     };
 
-    const onError = (m) => {
-      dispatch(addNotification({ type: "error", message: String(m || "Socket error") }));
-    };
+    const onPlayerConnected = () => dispatch(addNotification({ type: "info", message: "Player connected" }));
+    const onPlayerDisconnected = () => dispatch(addNotification({ type: "warning", message: "A player disconnected" }));
 
-    // attach
-    socket.on("connect", doJoin);
-    socket.on("rummy/player_connected", onPlayerConnected);
-    socket.on("rummy/player_disconnected", onPlayerDisconnected);
-    socket.on("rummy/state", onState);
-    socket.on("rummy/game_started", onGameStarted);
-    socket.on("rummy/cut_results", onCutResults);
-    socket.on("rummy/seating_finalized", onSeatingFinalized);
-    socket.on("rummy/shuffle_applied", onShuffleApplied);
-    socket.on("rummy/cut_applied", onCutApplied);
+    const events = [
+      ["connect", onConnect],
+      ["disconnect", onDisconnect],
+      ["rummy/state", onState],
+      ["rummy/game_started", onGameStarted],
+      ["rummy/player_connected", onPlayerConnected],
+      ["rummy/player_disconnected", onPlayerDisconnected],
+      ["rummy/error", onError],
+    ];
 
-    // ✅ new/optional server messages
-    socket.on("rummy/spectator_joined", onSpectatorJoined);
-    socket.on("rummy/info", onInfo);
-    socket.on("rummy/error", onError);
+    events.forEach(([event, handler]) => socketService.off(event, handler));
+    events.forEach(([event, handler]) => socketService.on(event, handler));
 
-    // join immediately if already connected
-    if (socket.connected) doJoin();
+    if (socket.connected) onConnect();
 
-    (async () => {
-      try {
-        if (socketService.waitUntilConnected) await socketService.waitUntilConnected();
-      } catch (err) {
-        console.error("[Lobby] socket connect error:", err);
-        dispatch(addNotification({ type: "error", message: "Failed to join lobby. Please try again." }));
-      } finally {
-        if (!cancelled) setJoining(false);
-      }
-    })();
+    return () => events.forEach(([event, handler]) => socketService.off(event, handler));
+  }, [dispatch, navigate, play, tableId, unlock, user]);
 
-    return () => {
-      cancelled = true;
-      socket.off("connect", doJoin);
-      socket.off("rummy/player_connected", onPlayerConnected);
-      socket.off("rummy/player_disconnected", onPlayerDisconnected);
-      socket.off("rummy/state", onState);
-      socket.off("rummy/game_started", onGameStarted);
-      socket.off("rummy/cut_results", onCutResults);
-      socket.off("rummy/seating_finalized", onSeatingFinalized);
-      socket.off("rummy/shuffle_applied", onShuffleApplied);
-      socket.off("rummy/cut_applied", onCutApplied);
-      socket.off("rummy/spectator_joined", onSpectatorJoined);
-      socket.off("rummy/info", onInfo);
-      socket.off("rummy/error", onError);
-    };
-  }, [dispatch, navigate, tableId, user, meId]);
-
-  const handleChooseSeat = (seatIndex) => {
-    if (!cutInfo) return;
-    const socket = socketService.getSocket();
-    if (!socket) return;
-
-    setChoosingSeat(false);
-
-    socket.emit("rummy/choose_seat", {
-      gameId: cutInfo.gameId,
-      chosenSeat: seatIndex,
-    });
-
-    dispatch(addNotification({ type: "info", message: `Seat ${seatIndex + 1} selected.` }));
-  };
-
-  const handleShuffleChoice = (pattern) => {
-    if (!gameId) return;
-    const socket = socketService.getSocket();
-    if (!socket) return;
-
-    socket.emit("rummy/shuffle_choice", { gameId, pattern });
-
-    dispatch(addNotification({ type: "info", message: `Shuffle pattern "${pattern}" chosen.` }));
-  };
-
-  const handleCutChoice = (cutType) => {
-    if (!gameId) return;
-    const socket = socketService.getSocket();
-    if (!socket) return;
-
-    socket.emit("rummy/cut_choice", { gameId, cutType });
-
-    dispatch(addNotification({ type: "info", message: `Cut choice "${cutType.toUpperCase()}" chosen.` }));
-  };
-
-  const isLoading = tablesLoading || joining;
-  const minPlayers = table?.minPlayers ?? 2;
-  const maxPlayers = table?.maxPlayers ?? 6;
-
-  const phaseLabel = (() => {
-    if (flowPhase === "SEAT_CHOICE") return "Step 1/3: Highest-cut player is choosing seat.";
-    if (flowPhase === "AWAIT_SHUFFLE") return "Step 2/3: Shuffler is choosing shuffle pattern.";
-    if (flowPhase === "AWAIT_CUT") return "Step 3/3: Cutter is choosing cut position.";
-    if (flowPhase === "PLAYING") return "Game in progress.";
-    return "Waiting for enough players to start.";
-  })();
-
-  if (isLoading) {
+  if (tablesLoading && !table) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-800 to-slate-900">
+      <div className="min-h-[70vh] flex items-center justify-center bg-slate-950 text-white">
         <LoadingSpinner size="xl" />
       </div>
     );
   }
 
-  if (tablesError) {
+  if (tablesError && !table) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-800 to-slate-900 p-4">
-        <div className="max-w-md w-full">
-          <ErrorMessage message={tablesError} onRetry={() => dispatch(fetchTables())} />
-        </div>
+      <div className="p-4">
+        <ErrorMessage message={tablesError} onRetry={() => dispatch(fetchTables())} />
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-800 to-slate-900 p-4">
-      <div className="max-w-3xl mx-auto">
-        <div className="bg-white rounded-2xl shadow-lg p-4 sm:p-6">
-          <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
-            <div>
-              <h1 className="text-2xl font-bold text-gray-900">Lobby</h1>
-              <p className="text-gray-600 mt-1 text-sm">
-                {table ? (
-                  <>
-                    Waiting for players to join <span className="font-medium">{table.name}</span>. Need at least{" "}
-                    <span className="font-medium">{minPlayers}</span> players to start.
-                  </>
-                ) : (
-                  <>This table might have been closed or is not available anymore.</>
-                )}
-              </p>
-            </div>
-            <Link
-              to="/"
-              className="inline-flex items-center justify-center px-3 py-1.5 text-xs sm:text-sm rounded-full border border-gray-300 text-gray-700 hover:bg-gray-50 transition"
-            >
-              Back to Dashboard
-            </Link>
-          </div>
-
-          <div className="mt-6">
-            <div className="flex items-center justify-between mb-3">
-              <h2 className="text-lg font-semibold text-gray-900">Players in Lobby</h2>
-              <span className="text-xs text-gray-500">
-                {orderedPlayers.length}/{maxPlayers} joined
-              </span>
-            </div>
-
-            {orderedPlayers.length > 0 ? (
-              <ul className="space-y-2">
-                {orderedPlayers.map((p, idx) => (
-                  <li
-                    key={String(p.playerId)}
-                    className="flex items-center justify-between bg-gray-50 rounded-lg px-3 py-2"
-                  >
-                    <div className="flex items-center gap-3">
-                      <div className="w-8 h-8 rounded-full bg-emerald-100 text-emerald-700 flex items-center justify-center font-semibold text-sm">
-                        {idx + 1}
-                      </div>
-                      <div>
-                        <div className="text-sm font-medium text-gray-900">
-                          {String(p.playerId) === String(meId) ? "You" : p.username || `Player ${idx + 1}`}
-                        </div>
-                        <div className="text-xs text-gray-500 capitalize">
-                          {p.status || "active"}
-                          {typeof p.seatIndex === "number" && (
-                            <span className="ml-1 text-[11px] text-gray-600">• seat {p.seatIndex + 1}</span>
-                          )}
-                          {String(currentTurn) === String(p.playerId) && (
-                            <span className="ml-1 text-[11px] text-emerald-600 font-semibold">• current turn</span>
-                          )}
-                          {p.isShuffler && (
-                            <span className="ml-1 text-[11px] text-amber-600 font-semibold">• shuffler</span>
-                          )}
-                          {p.isCutter && (
-                            <span className="ml-1 text-[11px] text-indigo-600 font-semibold">• cutter</span>
-                          )}
-                        </div>
-                      </div>
-                    </div>
-                    <div className={`text-xs font-medium ${p.connected ? "text-emerald-600" : "text-gray-400"}`}>
-                      {p.connected ? "online" : "offline"}
-                    </div>
-                  </li>
-                ))}
-              </ul>
-            ) : (
-              <p className="text-gray-600 text-sm">No other players yet. You’re the first — great choice! 🎉</p>
-            )}
-          </div>
-
-          {cutInfo && flowPhase === "SEAT_CHOICE" && (
-            <div className="mt-6 p-3 rounded-lg bg-indigo-50 border border-indigo-100">
-              {isChooser ? (
-                <>
-                  <p className="text-sm font-medium text-indigo-900 mb-2">
-                    You got the highest cut! Choose your seat at the table.
-                  </p>
-                  <div className="flex flex-wrap gap-2 mt-1">
-                    {Array.from({ length: cutInfo.maxSeats || maxPlayers }).map((_, idx) => (
-                      <button
-                        key={idx}
-                        type="button"
-                        onClick={() => handleChooseSeat(idx)}
-                        disabled={!choosingSeat}
-                        className={`px-3 py-1.5 rounded-full text-xs font-semibold border transition
-                          ${
-                            choosingSeat
-                              ? "bg-indigo-600 text-white border-indigo-600 hover:bg-indigo-700 active:scale-95"
-                              : "bg-indigo-100 text-indigo-400 border-indigo-100 cursor-not-allowed"
-                          }`}
-                      >
-                        Seat {idx + 1}
-                      </button>
-                    ))}
-                  </div>
-                </>
-              ) : (
-                <p className="text-sm text-indigo-900">
-                  Cut completed. Waiting for the highest-cut player to choose a seat…
-                </p>
-              )}
-
-              <div className="mt-3 text-xs text-indigo-700">
-                <p className="font-semibold mb-1">Cut cards:</p>
-                <ul className="flex flex-wrap gap-2">
-                  {cutInfo.players?.map((p) => (
-                    <li
-                      key={p.userId}
-                      className="px-2 py-1 rounded-full bg-white border border-indigo-100 shadow-sm"
-                    >
-                      <span className="font-medium">
-                        {orderedPlayers.find((pl) => String(pl.playerId) === String(p.userId))?.username ||
-                          p.userId.slice(0, 6)}
-                      </span>
-                      {": "}
-                      <span className="font-mono">
-                        {p.cutCard?.rank} of {p.cutCard?.suit}
-                        {p.isShuffler && " • Shuffler"}
-                        {p.isCutter && " • Cutter"}
-                      </span>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            </div>
-          )}
-
-          {gameId && me && (
-            <div className="mt-6 space-y-3">
-              {me.isShuffler && flowPhase === "AWAIT_SHUFFLE" && (
-                <div className="p-3 rounded-lg bg-amber-50 border border-amber-100">
-                  <p className="text-xs font-semibold text-amber-900 mb-1">
-                    You are the shuffler – choose a shuffle pattern:
-                  </p>
-                  <div className="flex flex-wrap gap-2">
-                    {["default", "riffle", "pile"].map((pattern) => (
-                      <button
-                        key={pattern}
-                        type="button"
-                        onClick={() => handleShuffleChoice(pattern)}
-                        className="px-3 py-1.5 text-xs rounded-full border border-amber-200 bg-white hover:bg-amber-100 transition"
-                      >
-                        {pattern}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {me.isCutter && flowPhase === "AWAIT_CUT" && (
-                <div className="p-3 rounded-lg bg-emerald-50 border border-emerald-100">
-                  <p className="text-xs font-semibold text-emerald-900 mb-1">
-                    You are the cutter – choose how to cut:
-                  </p>
-                  <div className="flex flex-wrap gap-2">
-                    {["low", "mid", "high"].map((cutType) => (
-                      <button
-                        key={cutType}
-                        type="button"
-                        onClick={() => handleCutChoice(cutType)}
-                        className="px-3 py-1.5 text-xs rounded-full border border-emerald-200 bg-white hover:bg-emerald-100 transition"
-                      >
-                        {cutType.toUpperCase()}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              )}
-            </div>
-          )}
-
-          <div className="mt-6 p-3 bg-gray-50 rounded-lg">
-            <p className="text-sm text-gray-700">
-              Status: <span className="font-medium">{gameStatus || "waiting"}</span>
-              {table && (
-                <>
-                  {" • "} Min players: <span className="font-medium">{minPlayers}</span>
-                  {" • "} Max players: <span className="font-medium">{maxPlayers}</span>
-                </>
-              )}
-            </p>
-            <p className="text-xs text-gray-500 mt-1">{phaseLabel}</p>
+    <div className="min-h-screen -mx-3 sm:mx-0 bg-[radial-gradient(circle_at_top,#166534_0%,#052e16_34%,#020617_100%)] text-white overflow-hidden">
+      <div className="px-4 sm:px-6 py-4 sm:py-6 max-w-6xl mx-auto space-y-5">
+        <div className="flex items-center justify-between gap-3">
+          <Link to="/dashboard" className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-2 text-xs font-bold text-white/70 hover:bg-white/10">
+            <ArrowLeft size={15} /> Tables
+          </Link>
+          <div className={`inline-flex items-center gap-2 rounded-full px-3 py-2 text-xs font-bold ${socketReady ? "bg-emerald-400/15 text-emerald-200" : "bg-amber-400/15 text-amber-200"}`}>
+            <Wifi size={15} /> {socketReady ? "Connected" : "Connecting"}
           </div>
         </div>
+
+        <section className="relative overflow-hidden rounded-[2rem] border border-white/10 bg-white/[0.08] shadow-2xl backdrop-blur-xl p-5 sm:p-7">
+          <div className="absolute -right-24 -top-24 h-64 w-64 rounded-full bg-amber-300/15 blur-3xl" />
+          <div className="relative grid grid-cols-1 lg:grid-cols-[1fr_20rem] gap-6 items-start">
+            <div>
+              <div className="inline-flex items-center gap-2 rounded-full bg-amber-300/10 border border-amber-300/20 px-3 py-1 text-xs font-black text-amber-100 mb-3">
+                <ShieldCheck size={14} /> Secure Lobby
+              </div>
+              <h1 className="text-2xl sm:text-4xl font-black tracking-tight">{table?.name || "Rummy Table"}</h1>
+              <p className="mt-2 max-w-2xl text-sm sm:text-base text-emerald-50/70">
+                Your seat is reserved through the socket session. Stay here until the table reaches the minimum player count, then the hand starts automatically.
+              </p>
+
+              <div className="mt-5 grid grid-cols-3 gap-3 max-w-xl">
+                <div className="rounded-2xl bg-black/25 p-3 border border-white/10">
+                  <Coins className="text-amber-300 mb-1" size={18} />
+                  <p className="text-[10px] text-white/45">Entry</p>
+                  <p className="font-black">{entry.toLocaleString()}</p>
+                </div>
+                <div className="rounded-2xl bg-black/25 p-3 border border-white/10">
+                  <Users className="text-emerald-300 mb-1" size={18} />
+                  <p className="text-[10px] text-white/45">Players</p>
+                  <p className="font-black">{joinedCount}/{maxPlayers}</p>
+                </div>
+                <div className="rounded-2xl bg-black/25 p-3 border border-white/10">
+                  <Clock3 className="text-sky-300 mb-1" size={18} />
+                  <p className="text-[10px] text-white/45">Phase</p>
+                  <p className="font-black text-xs sm:text-sm truncate">{flowPhase || gameStatus || "LOBBY"}</p>
+                </div>
+              </div>
+
+              <div className="mt-5 rounded-2xl border border-white/10 bg-black/25 p-4">
+                <div className="flex items-center justify-between text-sm mb-2">
+                  <span className="text-white/65">Minimum players needed</span>
+                  <span className="font-black text-amber-100">{Math.min(joinedCount, minPlayers)}/{minPlayers}</span>
+                </div>
+                <div className="h-2.5 overflow-hidden rounded-full bg-black/40">
+                  <div className="h-full rounded-full bg-gradient-to-r from-emerald-400 to-amber-300 transition-all" style={{ width: `${progressPct}%` }} />
+                </div>
+                <div className="mt-3 flex items-center gap-2 text-sm text-white/70">
+                  {joining ? <Loader2 size={16} className="animate-spin text-amber-200" /> : meSeated ? <CheckCircle2 size={16} className="text-emerald-300" /> : <Lock size={16} className="text-amber-300" />}
+                  <span>{meSeated ? "You are seated. Waiting for opponents…" : statusText}</span>
+                </div>
+              </div>
+            </div>
+
+            <aside className="rounded-[1.5rem] border border-white/10 bg-black/25 p-5">
+              <div className="flex items-center gap-3 mb-4">
+                <div className="rounded-2xl bg-emerald-400/15 p-3 text-emerald-200"><Volume2 size={20} /></div>
+                <div>
+                  <h3 className="font-black">Before Game Starts</h3>
+                  <p className="text-xs text-white/50">Best mobile experience</p>
+                </div>
+              </div>
+              <ul className="space-y-3 text-sm text-white/65">
+                <li className="flex gap-2"><span className="text-emerald-300">✓</span> Keep this page open until game starts.</li>
+                <li className="flex gap-2"><span className="text-emerald-300">✓</span> Turn sound on for draw/discard/turn feedback.</li>
+                <li className="flex gap-2"><span className="text-emerald-300">✓</span> Rotate to landscape after entering game table.</li>
+              </ul>
+              <button
+                type="button"
+                onClick={() => dispatch(fetchTables())}
+                className="mt-5 inline-flex w-full items-center justify-center gap-2 rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm font-black text-white/75 hover:bg-white/10"
+              >
+                <RotateCcw size={16} /> Refresh Lobby Data
+              </button>
+            </aside>
+          </div>
+        </section>
+
+        <section className="rounded-[2rem] border border-white/10 bg-white/[0.06] p-4 sm:p-6 backdrop-blur-xl">
+          <div className="flex items-center justify-between mb-4">
+            <div>
+              <h2 className="text-lg sm:text-xl font-black">Seats</h2>
+              <p className="text-xs text-white/50">Game starts at {minPlayers} joined players.</p>
+            </div>
+            <span className="rounded-full bg-black/25 px-3 py-1 text-xs font-black text-white/65">{joinedCount}/{maxPlayers}</span>
+          </div>
+
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+            {seats.map((player, index) => {
+              const playerId = player?.playerId || player?.userId || player?._id;
+              const isMe = playerId && String(playerId) === String(meId);
+              return (
+                <div key={index} className={`min-h-[7.5rem] rounded-3xl border p-3 flex flex-col items-center justify-center text-center ${player ? "border-emerald-300/20 bg-emerald-400/10" : "border-dashed border-white/10 bg-black/20"}`}>
+                  <div className={`h-12 w-12 rounded-2xl flex items-center justify-center text-lg font-black ${player ? "bg-gradient-to-br from-emerald-300 to-amber-200 text-slate-950" : "bg-white/5 text-white/25"}`}>
+                    {player ? String(player.username || "P").slice(0, 1).toUpperCase() : index + 1}
+                  </div>
+                  <p className="mt-2 text-sm font-black truncate max-w-full">{player?.username || "Open Seat"}</p>
+                  <p className={`mt-1 text-[10px] font-bold ${isMe ? "text-amber-200" : "text-white/40"}`}>{isMe ? "You" : player ? String(player.status || "ACTIVE") : "Waiting"}</p>
+                </div>
+              );
+            })}
+          </div>
+        </section>
       </div>
     </div>
   );

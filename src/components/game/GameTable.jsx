@@ -1,4 +1,8 @@
-// client/src/components/game/GameTable.jsx
+// 📁 src/components/game/GameTable.jsx
+// ═══════════════════════════════════════════════════
+// Indian Rummy – Production Game Table
+// Oval table + Player avatars + 4-slot hand dock
+// ═══════════════════════════════════════════════════
 import React, { useEffect, useMemo, useState, useCallback, useRef } from "react";
 import { useSelector, useDispatch } from "react-redux";
 import { useParams, useNavigate } from "react-router-dom";
@@ -14,7 +18,6 @@ import {
   setGameStatus,
   addNotification,
   getGameState,
-  joinTable,
   drawCard,
   discardCard,
   dropGame,
@@ -26,16 +29,36 @@ import {
   setReviewData,
   setVotes,
   confirmShowSocket,
+  setSecurityError,
+  joinTable,
+  leaveTable,
 } from "../../store/slices/gameSlice";
 
 import PlayerHand from "./PlayerHand";
+import PlayerAvatar from "./PlayerAvatar";
+import TableCenter from "./TableCenter";
+import GameHUD from "./GameHUD";
 import LoadingSpinner from "../common/LoadingSpinner";
 import ErrorMessage from "../common/ErrorMessage";
-import { getCardImage, preloadAllCards } from "../utils/cardimages";
-import cardBack from "../../assets/cards/optimized/back_card.webp";
+import { preloadAllCards } from "../utils/cardimages";
 import SeatCutOverlay from "./SeatCutOverlay";
 import ShowReviewModal from "./ShowReviewModal";
+import SecurityOverlay from "./SecurityOverlay";
 import NotificationCenter from "../common/Notificaton";
+import { normalizeErrorMessage } from "../../utils/normalizeError";
+import { normalizeGameStatePayload, normalizeDiscardHistory } from "../../utils/normalizeGameSocketPayload";
+import { unlockAction } from "../../utils/actionLock";
+import useSound from "../../hooks/useSound";
+
+
+// ── Position map for opponents around the oval ──
+const POSITION_MAP = {
+  2: ["top"],
+  3: ["top-left", "top-right"],
+  4: ["top-left", "top", "top-right"],
+  5: ["left", "top-left", "top-right", "right"],
+  6: ["left", "top-left", "top", "top-right", "right"],
+};
 
 const GameTable = () => {
   const dispatch = useDispatch();
@@ -60,7 +83,11 @@ const GameTable = () => {
     notifications,
     seatCutResults,
     reviewData,
-    votes
+    votes,
+    allowedActions,
+    stateVersion,
+    settlementStatus,
+    securityError
   } = useSelector((state) => state.game);
 
   const isMyTurn = React.useMemo(() => {
@@ -68,34 +95,40 @@ const GameTable = () => {
     return String(currentTurn) === String(meId);
   }, [meId, currentTurn]);
 
+  const actionSet = useMemo(() => new Set(Array.isArray(allowedActions) ? allowedActions : []), [allowedActions]);
+  const canDrawFromDeck = actionSet.has("DRAW_FROM_DECK");
+  const canDrawFromDiscard = actionSet.has("DRAW_FROM_DISCARD");
+  const canDiscard = actionSet.has("DISCARD");
+  const canDrop = actionSet.has("DROP");
+  const canDeclare = actionSet.has("DECLARE");
+  const canShowConfirmYes = actionSet.has("SHOW_CONFIRM_YES");
+  const canShowConfirmNo = actionSet.has("SHOW_CONFIRM_NO");
+
   const [handGroups, setHandGroups] = useState({ groups: [], ungrouped: [] });
   const [showDeclareModal, setShowDeclareModal] = useState(false);
-  const [showDropModal, setShowDropModal] = useState(false); // ✅ Drop Confirmation State
+  const [showDropModal, setShowDropModal] = useState(false);
   const didUserDrop = useRef(false);
   const [showDiscardHistory, setShowDiscardHistory] = useState(false);
   const [isPortrait, setIsPortrait] = useState(false);
   const [rotateHint, setRotateHint] = useState("");
-  const [cardImagesLoaded, setCardImagesLoaded] = useState(false);
 
-  const handleCardImageLoad = useCallback(() => {
-    setCardImagesLoaded(true);
-  }, []);
+  const { play, toggleMute, isMuted } = useSound();
+
 
   // Preload all card images into browser cache on mount
   useEffect(() => {
     preloadAllCards();
   }, []);
 
+  // ── Orientation lock ──
   const requestLandscape = async () => {
     try {
       setRotateHint("");
-      // Request Fullscreen first (required by some browsers to lock orientation)
       if (document.documentElement.requestFullscreen) {
-        await document.documentElement.requestFullscreen().catch(() => { });
+        await document.documentElement.requestFullscreen().catch(() => {});
       } else if (document.documentElement.webkitRequestFullscreen) {
-        await document.documentElement.webkitRequestFullscreen().catch(() => { }); // iOS/Safari
+        await document.documentElement.webkitRequestFullscreen().catch(() => {});
       }
-
       if (window?.screen?.orientation?.lock) {
         await window.screen.orientation.lock("landscape");
         return;
@@ -114,8 +147,8 @@ const GameTable = () => {
     checkOrientation();
     window.addEventListener("resize", checkOrientation);
     window.addEventListener("orientationchange", checkOrientation);
-    if (window.screen && window.screen.orientation && window.screen.orientation.lock) {
-      window.screen.orientation.lock("landscape").catch(() => { });
+    if (window.screen?.orientation?.lock) {
+      window.screen.orientation.lock("landscape").catch(() => {});
     }
     return () => {
       window.removeEventListener("resize", checkOrientation);
@@ -123,128 +156,157 @@ const GameTable = () => {
     };
   }, []);
 
-  const discardHistoryTop10 = useMemo(
-    () => (Array.isArray(discardHistory) ? discardHistory.slice(-10) : []),
-    [discardHistory]
-  );
-
-  const topDiscard = useMemo(() => {
-    if (discardTop) return discardTop;
-    return discardHistoryTop10.length ? discardHistoryTop10[discardHistoryTop10.length - 1] : null;
-  }, [discardTop, discardHistoryTop10]);
-
-  const cardsToShow = useMemo(() => {
-    if (showDiscardHistory) return discardHistoryTop10;
-    return topDiscard ? [topDiscard] : [];
-  }, [discardHistoryTop10, showDiscardHistory, topDiscard]);
-
-  // ✅ NO invalid fallback; backend uses GM-table-uuid now
+  // ── Derived data ──
   const gameIdForNav = useCallback(() => currentGame?.gameId || null, [currentGame?.gameId]);
 
-  // Socket Effects
+  // Separate "me" from opponents
+  const { opponents, mePlayer } = useMemo(() => {
+    const allPlayers = Array.isArray(players) ? players : [];
+    const me = allPlayers.find((p) => String(p.playerId) === String(meId));
+    const others = allPlayers.filter((p) => String(p.playerId) !== String(meId));
+    return { opponents: others, mePlayer: me };
+  }, [players, meId]);
+
+  // Assign positions to opponents
+  const opponentPositions = useMemo(() => {
+    const count = opponents.length;
+    const positions = POSITION_MAP[count + 1] || POSITION_MAP[2] || ["top"];
+    return opponents.map((p, idx) => ({
+      player: p,
+      position: positions[idx] || "top",
+    }));
+  }, [opponents]);
+
+  // ═══════════════════════════════════════════════
+  // SOCKET EFFECTS (unchanged from original)
+  // ═══════════════════════════════════════════════
   useEffect(() => {
     if (!tableId || !user) return;
 
-    // ... existing socket setup ...
     let socket = socketService.getSocket();
     if (!socket) {
       const token = localStorage.getItem("accessToken");
       socket = socketService.connect(token);
     }
-    dispatch(getGameState(tableId));
-    const doJoin = () => joinTable(tableId);
+    
+    // Patch: Ensure the socket joins the table/game room on mount/refresh
+    // to keep real-time communication alive.
+    dispatch(getGameState(tableId)).then((res) => {
+      if (res.payload && !res.error) {
+        joinTable(tableId);
+      }
+    });
 
-    // Existing event handlers...
-    const onPlayerConnected = () => dispatch(addNotification({ type: "info", message: "Player connected" }));
+    const onPlayerConnected = () => {
+      dispatch(addNotification({ type: "info", message: "Player connected" }));
+      dispatch(getGameState(tableId));
+    };
     const onPlayerDisconnected = () => dispatch(addNotification({ type: "warning", message: "Player disconnected" }));
-    const onState = (s) => {
-      if (s?.players) dispatch(setPlayers(s.players));
-      if (typeof s?.currentTurn !== "undefined") dispatch(setCurrentTurn(s.currentTurn));
-      if ("discardTop" in (s || {})) dispatch(setDiscardTop(s.discardTop ?? null));
-      if (Array.isArray(s?.discardHistory)) dispatch(setDiscardHistory(s.discardHistory));
-      if (Number.isFinite(s?.drawPileCount)) dispatch(setDrawPileCount(s.drawPileCount));
-      if (s?.status) dispatch(setGameStatus(s.status));
-
-      // Sync review data if reconnecting
+    const onConnect = () => {
+      dispatch(addNotification({ type: "info", message: "Reconnected. Syncing game state…" }));
+      dispatch(getGameState(tableId));
+    };
+    const applyPublicState = (payload = {}) => {
+      const s = normalizeGameStatePayload(payload);
+      dispatch(setGameState(s));
       if (s?.phase === "SHOW_CONFIRM" && s.declaration) {
         dispatch(setReviewData(s.declaration));
-        dispatch(setVotes(s.declaration.votes));
+        dispatch(setVotes(s.declaration.votes || {}));
       }
     };
+    const onState = applyPublicState;
     const onGameStarted = (data) => {
-      dispatch(setGameState(data));
-      dispatch(setGameStatus("playing"));
+      applyPublicState(data);
+      dispatch(setGameStatus("PLAYING"));
       dispatch(addNotification({ type: "success", message: "Game started!" }));
-      // Clear cut results after game starts
       dispatch(setSeatCutResults(null));
     };
-    // ... (other handlers like onYourHand, onCardDrawn...)
-    const onYourHand = ({ hand }) => dispatch(setMyCards(hand || []));
+    const onYourHand = ({ hand, myHand }) => dispatch(setMyCards(myHand || hand || []));
     const onCardDrawn = (data) => {
-      if (Array.isArray(data?.discardHistory)) dispatch(setDiscardHistory(data.discardHistory));
+      unlockAction(`draw:${data?.gameId || currentGame?.gameId || ""}`);
+      play("cardDraw", 0.4);
+      const history = normalizeDiscardHistory(data);
+      if (history.length) dispatch(setDiscardHistory(history));
+      if ("discardTop" in (data || {})) dispatch(setDiscardTop(data.discardTop ?? null));
       if (Number.isFinite(data?.drawPileCount)) dispatch(setDrawPileCount(data.drawPileCount));
     };
+
     const onCardDiscarded = (data) => {
+      unlockAction(`discard:${data?.gameId || currentGame?.gameId || ""}:${data?.card?.cardId || "card"}`);
+      play("cardPlace", 0.4);
       if ("discardTop" in (data || {})) dispatch(setDiscardTop(data.discardTop ?? null));
       else if (data?.card) dispatch(setDiscardTop(data.card));
-
-      if (Array.isArray(data?.discardHistory)) dispatch(setDiscardHistory(data.discardHistory));
+      const history = normalizeDiscardHistory(data);
+      if (history.length) dispatch(setDiscardHistory(history));
+      if ("discardTop" in (data || {})) dispatch(setDiscardTop(data.discardTop ?? null));
       if (Number.isFinite(data?.drawPileCount)) dispatch(setDrawPileCount(data.drawPileCount));
     };
-    const onNextTurn = (data) => dispatch(setCurrentTurn(data.nextPlayerId));
-    const onPlayerDropped = () => dispatch(addNotification({ type: "warning", message: "Player dropped" }));
-    const onTimedOut = ({ playerId }) => dispatch(addNotification({ type: "warning", message: `Player timed out (${playerId})` }));
 
-    // NEW HANDLERS
-    const onSeatCutResult = (data) => {
-      dispatch(setSeatCutResults(data.results));
+    const onNextTurn = (data) => {
+      dispatch(setCurrentTurn(data.nextPlayerId));
+      if (String(data.nextPlayerId) === String(meId)) {
+        play("turnNotify", 0.5);
+      }
     };
-    const onShowReview = (data) => {
-      dispatch(setReviewData(data));
-      // Reset local vote state if managed
-    };
-    const onShowVoteUpdate = (data) => {
-      dispatch(setVotes(data.votes));
+    const onPlayerDropped = () => {
+      dispatch(addNotification({ type: "warning", message: "Player dropped" }));
+      play("cardPlace", 0.3);
     };
 
-    // ... (win handlers)
+    const onTimedOut = (payload = {}) => {
+      const playerId = payload.playerId || payload.userId || payload.id || "unknown";
+      dispatch(addNotification({ type: "warning", message: `Player timed out (${playerId})` }));
+    };
+
+    const onSeatCutResult = (data) => dispatch(setSeatCutResults(data.results));
+    const onShowReview = (data) => dispatch(setReviewData(data));
+    const onShowVoteUpdate = (data = {}) => {
+      if (data.votes) dispatch(setVotes(data.votes));
+      else if (data.voterId) dispatch(setVotes({ voterId: data.voterId, decision: data.decision }));
+    };
+
     const onWinDeclared = (data) => {
+      unlockAction(`declare:${data?.gameId || currentGame?.gameId || ""}`);
+      if (String(data.winner) === String(meId)) play("winFanfare", 0.6);
       dispatch(setGameStatus("ended"));
-      dispatch(setReviewData(null)); // Clear review
-      // ... nav logic
-      const gid = gameIdForNav() || data.gameId || currentGame?.gameId; // Fallback
+      dispatch(setReviewData(null));
+      const gid = gameIdForNav() || data.gameId || currentGame?.gameId;
       navigate(`/rummy/result/${gid}`, { state: { winner: data.winner, isYou: String(data.winner) === String(meId), losers: data.losers || [], tableId }, replace: true });
     };
     const onAutoWin = (data) => {
-      console.log("[DEBUG] onAutoWin received:", data);
+      if (String(data.winner) === String(meId)) play("winFanfare", 0.6);
       dispatch(setGameStatus("ended"));
       dispatch(setReviewData(null));
 
-      const fallback = gameIdForNav();
-      console.log("[DEBUG] local fallback:", fallback);
-      console.log("[DEBUG] currentGame in scope:", currentGame);
-
-      const gid = fallback || data.gameId || currentGame?.gameId;
-      console.log("[DEBUG] Navigating to result:", gid);
-
+      const gid = gameIdForNav() || data.gameId || currentGame?.gameId;
       if (!gid) {
-        console.error("[DEBUG] CRITICAL: No Game ID found for navigation!");
         dispatch(addNotification({ type: "error", message: "Error: Could not find Game ID to show results." }));
         return;
       }
-
       const wasDrop = didUserDrop.current;
       navigate(`/rummy/result/${gid}`, { state: { winner: data.winner, isYou: String(data.winner) === String(meId), losers: [], tableId, dropped: wasDrop }, replace: true });
     };
     const onInvalidDeclaration = (data) => {
+      unlockAction(`declare:${data?.gameId || currentGame?.gameId || ""}`);
+      play("error", 0.5);
       dispatch(addNotification({ type: "error", message: data?.message || "Invalid declaration" }));
       setShowDeclareModal(false);
-      // If we were reviewing, maybe clear? Usually invalid means it bounces back to playing.
     };
-    const onError = (msg) => dispatch(addNotification({ type: "error", message: String(msg) }));
+    const onError = (msg) => {
+      if (msg?.gameId) {
+        unlockAction(`draw:${msg.gameId}`);
+        unlockAction(`discard:${msg.gameId}:card`);
+        unlockAction(`drop:${msg.gameId}`);
+        unlockAction(`declare:${msg.gameId}`);
+      }
+      play("error", 0.4);
+      if (msg?.code === "ERR_WALLET_FROZEN") dispatch(setSecurityError(msg));
+      dispatch(addNotification({ type: "error", message: normalizeErrorMessage(msg, "Socket error") }));
+    };
+
 
     const events = [
-      ["connect", doJoin],
+      ["connect", onConnect],
       ["rummy/player_connected", onPlayerConnected],
       ["rummy/player_disconnected", onPlayerDisconnected],
       ["rummy/state", onState],
@@ -255,90 +317,70 @@ const GameTable = () => {
       ["rummy/next_turn", onNextTurn],
       ["rummy/player_dropped", onPlayerDropped],
       ["rummy/player_timeout", onTimedOut],
+      ["rummy/player_timedout", onTimedOut],
+      ["rummy/player_timed_out", onTimedOut],
       ["rummy/win_declared", onWinDeclared],
       ["rummy/auto_win", onAutoWin],
       ["rummy/invalid_declaration", onInvalidDeclaration],
       ["rummy/error", onError],
-      // New
       ["rummy/seat_cut_result", onSeatCutResult],
+      ["rummy/cut_results", onSeatCutResult],
       ["rummy/show_review", onShowReview],
       ["rummy/show_vote_update", onShowVoteUpdate],
-      ["rummy/win_confirmed", onWinDeclared], // ✅ Listen for backend's new win event
+      ["rummy/show_confirm_update", onShowVoteUpdate],
+      ["rummy/win_confirmed", onWinDeclared],
     ];
 
     events.forEach(([evt, fn]) => socketService.off(evt, fn));
-    if (socket.connected) doJoin();
     events.forEach(([evt, fn]) => socketService.on(evt, fn));
 
     return () => { events.forEach(([evt, fn]) => socketService.off(evt, fn)); };
   }, [tableId, user, dispatch, navigate, gameIdForNav, meId]);
 
+  // ═══════════════════════════════════════════════
+  // ACTION HANDLERS (unchanged)
+  // ═══════════════════════════════════════════════
   const handleDrawCard = (source) => {
-    if (!isMyTurn || !currentGame) return;
-    if (!source) return;
-
-    const normalized = source === "discard" ? "discard" : "draw";
-    drawCard(currentGame.gameId, meId, normalized);
+    if (!currentGame || !source) return;
+    const normalized = String(source).toLowerCase() === "discard" ? "discard" : "draw";
+    if (normalized === "discard" && !canDrawFromDiscard) return;
+    if (normalized === "draw" && !canDrawFromDeck) return;
+    drawCard(currentGame.gameId, meId, normalized, stateVersion);
   };
 
   const handleDiscardCard = (card) => {
-    if (!isMyTurn || !currentGame) return;
-    if (!card) return;
-    discardCard(currentGame.gameId, meId, card);
+    if (!currentGame || !card || !canDiscard) return;
+    discardCard(currentGame.gameId, meId, card, stateVersion);
   };
 
-  const handleDrop = () => {
-    setShowDropModal(true); // ✅ Show confirmation instead of immediate drop
-  };
+  const handleDrop = () => { if (canDrop) setShowDropModal(true); };
 
   const confirmDrop = () => {
     if (currentGame) {
       didUserDrop.current = true;
-      dropGame(currentGame.gameId);
+      dropGame(currentGame.gameId, stateVersion);
     }
     setShowDropModal(false);
   };
 
   const handleDeclareWin = () => {
     const gameId = currentGame?.gameId;
-    console.log("[DEBUG] Declare - currentGame:", currentGame);
-    console.log("[DEBUG] Declare - Sending gameId:", gameId);
-
     if (!gameId || !meId) {
       dispatch(addNotification({ type: "error", message: "Unable to declare right now. Game not ready." }));
       return;
     }
-
-    // ✅ fixed payload (NO wrapper)
+    if (!canDeclare) {
+      dispatch(addNotification({ type: "error", message: "Declaration is not allowed right now." }));
+      return;
+    }
     declareWinSocket({
       gameId,
       playerId: meId,
       groups: handGroups.groups,
       ungrouped: handGroups.ungrouped,
+      stateVersion,
     });
-
     setShowDeclareModal(false);
-  };
-
-  // ⚡ DEV CHEAT: Force Win
-  const handleDevWin = () => {
-    if (!currentGame?.gameId || !meId) return;
-
-    // Valid-looking dummy cards (Suit/Rank don't matter due to forceWin, but structure does)
-    const cheatGroups = [
-      [{ rank: "A", suit: "Spades" }, { rank: "2", suit: "Spades" }, { rank: "3", suit: "Spades" }],
-      [{ rank: "K", suit: "Hearts" }, { rank: "K", suit: "Diamonds" }, { rank: "K", suit: "Clubs" }],
-      [{ rank: "7", suit: "Diamonds" }, { rank: "8", suit: "Diamonds" }, { rank: "9", suit: "Diamonds" }, { rank: "10", suit: "Diamonds" }],
-      [{ rank: "5", suit: "Clubs" }, { rank: "6", suit: "Clubs" }, { rank: "7", suit: "Clubs" }]
-    ];
-
-    declareWinSocket({
-      gameId: currentGame.gameId,
-      playerId: meId,
-      groups: cheatGroups,
-      ungrouped: [],
-      forceWin: true // ⚡ Bypass validation
-    });
   };
 
   const handleGroupsChange = useCallback((data) => setHandGroups(data), []);
@@ -346,13 +388,17 @@ const GameTable = () => {
   const handleVoteSocket = (vote) => {
     const gid = currentGame?.gameId;
     if (!gid) return;
-    // socketService.emit("rummy/vote_show", { gameId: gid, vote });
-    confirmShowSocket(gid, vote ? "YES" : "NO");
+    if (vote && !canShowConfirmYes) return;
+    if (!vote && !canShowConfirmNo) return;
+    confirmShowSocket(gid, vote ? "YES" : "NO", stateVersion);
   };
 
+  // ═══════════════════════════════════════════════
+  // RENDER
+  // ═══════════════════════════════════════════════
   if (loading) {
     return (
-      <div className="flex items-center justify-center min-h-screen">
+      <div className="flex items-center justify-center min-h-screen bg-black">
         <LoadingSpinner size="xl" />
       </div>
     );
@@ -360,232 +406,144 @@ const GameTable = () => {
 
   if (error) {
     return (
-      <div className="flex items-center justify-center min-h-screen">
+      <div className="flex items-center justify-center min-h-screen bg-black">
         <ErrorMessage message={error} onRetry={() => dispatch(getGameState(tableId))} />
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen w-full bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-green-900 via-green-950 to-black text-white select-none overflow-hidden relative">
+    <div className="min-h-screen w-full text-white select-none overflow-hidden relative"
+      style={{ background: "var(--felt-vignette)" }}
+    >
+      {/* ── Portrait lock overlay ── */}
       {isPortrait && (
         <div className="fixed inset-0 z-50 bg-black flex flex-col items-center justify-center text-center px-6">
-          <div className="text-white text-lg font-semibold mb-2">Please rotate your device</div>
-
-          <div className="text-gray-300 text-xs max-w-xs mb-4">
-            This Rummy table is best experienced in landscape mode.
+          <div className="text-4xl mb-3">📱↔️</div>
+          <div className="text-white text-lg font-semibold mb-2">Rotate Your Device</div>
+          <div className="text-gray-400 text-xs max-w-xs mb-4">
+            This Rummy table is optimized for landscape mode.
           </div>
-
           <button
             onClick={requestLandscape}
-            className="px-4 py-2 rounded-lg bg-emerald-500 text-black font-semibold text-sm active:scale-95"
+            className="px-5 py-2.5 rounded-xl font-semibold text-sm active:scale-95 transition-transform"
+            style={{ background: "var(--gold)", color: "#1a1a1a" }}
           >
-            Rotate to Landscape
+            Switch to Landscape
           </button>
-
-          {rotateHint ? (
-            <div className="mt-3 text-[11px] text-white/70 max-w-xs">{rotateHint}</div>
-          ) : null}
+          {rotateHint && (
+            <div className="mt-3 text-[11px] text-white/50 max-w-xs">{rotateHint}</div>
+          )}
         </div>
       )}
 
-      <div className="h-screen w-full flex flex-col">
-        <div className="px-2 py-1 bg-neutral-950/70 border-b border-white/10 flex items-center justify-between flex-shrink-0">
-          <div className="flex items-center gap-2">
-            <h1 className="text-sm font-semibold">Rummy</h1>
-            <div className="text-[10px] text-white/60">
-              <span className="capitalize">{gameStatus}</span>
-              {currentTurn && (
-                <>
-                  {" • "}
-                  <span className={isMyTurn ? "text-green-400 font-medium" : ""}>
-                    {String(currentTurn) === String(meId) ? "Your Turn" : "Wait"}
-                  </span>
-                </>
-              )}
-            </div>
-          </div>
-          <div className="flex items-center gap-1">
-            {gameStatus === "playing" && (
-              <>
-                <button
-                  onClick={handleDrop}
-                  className="px-2 py-0.5 rounded bg-red-500 hover:bg-red-400 active:scale-95 text-white text-[10px] font-medium"
-                >
-                  Drop
-                </button>
-                <button
-                  onClick={() => setShowDeclareModal(true)}
-                  disabled={!isMyTurn}
-                  className="px-2 py-0.5 rounded bg-emerald-500 hover:bg-emerald-400 active:scale-95 disabled:opacity-50 text-black text-[10px] font-semibold"
-                >
-                  Declare
-                </button>
-                {/* DEV CHEAT — hidden in production */}
-                {import.meta.env.DEV && (
-                  <button
-                    onClick={handleDevWin}
-                    className="px-2 py-0.5 rounded bg-purple-600 hover:bg-purple-500 text-white text-[10px] font-bold"
-                    title="Force Instant Win (Testing)"
-                  >
-                    ⚡ Win
-                  </button>
-                )}
-              </>
-            )}
-          </div>
-        </div>
+      {/* ── Main Layout: Indian Rummy inspired play board ── */}
+      <div className="rummy-pro-screen">
+        <GameHUD
+          gameStatus={gameStatus}
+          isMyTurn={isMyTurn}
+          allowedActions={allowedActions}
+          drawPileCount={drawPileCount}
+          onDrop={handleDrop}
+          onDeclare={() => canDeclare && setShowDeclareModal(true)}
+          canDeclare={canDeclare}
+          onBack={() => {
+            leaveTable(tableId);
+            navigate("/dashboard");
+          }}
+          isMuted={isMuted}
+          onToggleMute={toggleMute}
+        />
 
-        <div className="flex-1 flex flex-col min-h-0">
-          <div className="flex-1 relative bg-gradient-to-br from-emerald-900 via-green-950 to-emerald-950">
-            <div className="absolute inset-0 bg-emerald-900/75 backdrop-blur-[1px]" />
 
-            <div className="relative z-10 h-full flex items-center justify-center">
-              <div className="flex items-center gap-6">
-                <div className="text-center">
-                  <div
-                    onClick={() => handleDrawCard("drawPile")}
-                    className={`w-11 h-16 rounded-lg border-2 border-gray-200 bg-emerald-950 shadow-lg flex items-center justify-center ${isMyTurn
-                      ? "cursor-pointer hover:scale-105 active:scale-110 transition-transform"
-                      : "opacity-50 cursor-not-allowed"
-                      }`}
-                    title={isMyTurn ? "Draw from deck" : "Wait"}
-                  >
-                    <div className="w-[90%] h-[90%] rounded-md overflow-hidden shadow-md border border-emerald-700 bg-emerald-900">
-                      <img src={cardBack} alt="Draw pile" className="w-full h-full object-cover" draggable={false} />
-                    </div>
+        <div className="rummy-play-frame">
+          <main className="rummy-purple-table-wrap">
+            <section className="rummy-purple-table">
+              <div className="table-pattern" />
+              <div className="table-glow" />
+
+              {opponentPositions.map(({ player, position }) => (
+                <div key={player.playerId} className={`rummy-seat rummy-seat-${position}`}>
+                  <div className={`seat-avatar ${String(currentTurn) === String(player.playerId) ? "active" : ""}`}>
+                    <span>{(player.username || "P").slice(0, 1).toUpperCase()}</span>
+                    <small>{player.hand?.length || player.handCount || 13}</small>
                   </div>
-                  <p className="mt-1 text-[9px] text-emerald-200/80 font-medium">
-                    Draw Pile{Number.isFinite(drawPileCount) ? ` (${drawPileCount})` : ""}
-                  </p>
+                  <div className="seat-name">{player.username || "Player"}</div>
                 </div>
+              ))}
 
-                <div className="text-center px-3">
-                  <div className="text-[10px] uppercase tracking-wider text-emerald-300/70 mb-1">
-                    {isMyTurn ? "Your Turn" : "Wait"}
-                  </div>
-                  <div className={`w-2 h-2 rounded-full mx-auto ${isMyTurn ? "bg-green-400 animate-pulse" : "bg-gray-500"}`} />
-                </div>
+              <TableCenter
+                drawPileCount={drawPileCount}
+                discardTop={discardTop}
+                discardHistory={discardHistory}
+                isMyTurn={isMyTurn}
+                canDrawFromDeck={canDrawFromDeck}
+                canDrawFromDiscard={canDrawFromDiscard}
+                canDiscard={canDiscard}
+                showDiscardHistory={showDiscardHistory}
+                onDrawFromDeck={() => handleDrawCard("draw")}
+                onDrawFromDiscard={() => handleDrawCard("discard")}
+                onToggleHistory={() => setShowDiscardHistory((v) => !v)}
+                onDiscardDrop={(card) => handleDiscardCard(card)}
+              />
+            </section>
+          </main>
 
-                <div className="text-center">
-                  <div
-                    onClick={() => handleDrawCard("discard")}
-                    className={`relative w-24 h-20 rounded-lg border-2 border-emerald-700 bg-emerald-900/80 shadow-lg flex items-center justify-center overflow-hidden ${isMyTurn
-                      ? "cursor-pointer hover:scale-105 active:scale-110 transition-transform"
-                      : "opacity-50 cursor-not-allowed"
-                      }`}
-                    title={isMyTurn ? "Pick from discard" : "Wait"}
-                  >
-                    {cardsToShow.length ? (
-                      <div className="relative w-full h-full flex items-center justify-center">
-                        <div className={`flex ${showDiscardHistory ? "-space-x-5" : "justify-center"}`}>
-                          {cardsToShow.map((card, idx) => {
-                            const imgSrc = getCardImage(card);
-                            const key = `${card.rank}-${card.suit}-${idx}`;
-                            return (
-                              <div
-                                key={key}
-                                className="w-8 h-12 rounded-md border border-emerald-700 bg-emerald-800 shadow-md overflow-hidden"
-                              >
-                                {imgSrc ? (
-                                  <img
-                                    src={imgSrc}
-                                    alt={`${card.rank} of ${card.suit}`}
-                                    className="w-full h-full object-cover"
-                                    draggable={false}
-                                    onLoad={handleCardImageLoad}
-                                  />
-                                ) : (
-                                  <div className="flex flex-col items-center justify-center text-xs text-emerald-100">
-                                    <span className="font-bold">{card.rank}</span>
-                                    <span>{suitGlyph(card.suit)}</span>
-                                  </div>
-                                )}
-                              </div>
-                            );
-                          })}
-                        </div>
-
-                        {!cardImagesLoaded && (
-                          <div className="absolute inset-0 bg-emerald-900/80 flex items-center justify-center">
-                            <span className="text-[9px] text-emerald-100 font-medium">Loading cards...</span>
-                          </div>
-                        )}
-                      </div>
-                    ) : (
-                      <span className="text-[9px] text-emerald-100 font-medium">No cards</span>
-                    )}
-                  </div>
-
-                  <div className="mt-1 flex items-center justify-center gap-1">
-                    <p className="text-[9px] text-emerald-200/80 font-medium">
-                      Discard Pile{showDiscardHistory ? " (Top 10)" : ""}
-                    </p>
-                    {discardHistoryTop10.length > 1 && (
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setShowDiscardHistory((v) => !v);
-                        }}
-                        className="w-5 h-5 rounded-full border border-emerald-400 bg-emerald-900/70 flex items-center justify-center text-[9px] hover:bg-emerald-800"
-                        title={showDiscardHistory ? "Hide discard history" : "Show last 10 discards"}
-                      >
-                        {showDiscardHistory ? "🙈" : "👁️"}
-                      </button>
-                    )}
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <div className="absolute inset-0 pointer-events-none bg-[radial-gradient(circle_at_center,transparent_35%,rgba(0,0,0,0.4)_100%)]" />
-          </div>
-
-          <div className="h-[140px] bg-gradient-to-t from-black/40 to-transparent backdrop-blur-sm border-t border-white/10 flex-shrink-0">
+          <section className="rummy-hand-dock-pro">
             <PlayerHand
               cards={myCards}
               isMyTurn={isMyTurn}
+              canDiscard={canDiscard}
               onReorder={(newOrder) => {
                 dispatch(reorderMyCards(newOrder));
-                reorderCards(currentGame?.gameId, meId, newOrder);
+                reorderCards(currentGame?.gameId, meId, newOrder, stateVersion);
               }}
               onDiscard={(card) => handleDiscardCard(card)}
               onGroupsChange={handleGroupsChange}
             />
-          </div>
+          </section>
         </div>
       </div>
 
+      {/* ═══════════════════════════════════════
+          MODALS & OVERLAYS
+          ═══════════════════════════════════════ */}
+
+      {/* Waiting for players */}
       {gameStatus === "waiting" && (
-        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-40 backdrop-blur-sm">
-          <div className="bg-neutral-900 border border-emerald-500/30 p-8 rounded-2xl flex flex-col items-center shadow-2xl">
-            <div className="w-16 h-16 mb-4 rounded-full border-4 border-emerald-500 border-t-transparent animate-spin" />
-            <h2 className="text-xl font-bold text-white mb-2">Waiting for Players...</h2>
-            <p className="text-emerald-200/70 text-sm">The game will start automatically when an opponent joins.</p>
-            <div className="mt-6 flex items-center gap-2 px-4 py-2 bg-white/5 rounded-full border border-white/10">
+        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-40 backdrop-blur-sm">
+          <div className="border border-emerald-500/20 p-8 rounded-2xl flex flex-col items-center shadow-2xl animate-fade-in"
+            style={{ background: "linear-gradient(135deg, #111 0%, #0a1f12 100%)" }}
+          >
+            <div className="w-14 h-14 mb-4 rounded-full border-4 border-amber-500 border-t-transparent animate-spin" />
+            <h2 className="text-xl font-bold text-white mb-2">Waiting for Players…</h2>
+            <p className="text-emerald-300/60 text-sm">Game starts when an opponent joins.</p>
+            <div className="mt-5 flex items-center gap-2 px-4 py-2 bg-white/5 rounded-full border border-white/10">
               <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-              <span className="text-xs text-white/90 font-medium">1 Player Seated</span>
+              <span className="text-xs text-white/80 font-medium">1 Player Seated</span>
             </div>
           </div>
         </div>
       )}
 
+      {/* Declare confirmation */}
       {showDeclareModal && (
-        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-3">
-          <div className="bg-white rounded-xl p-4 max-w-sm w-full">
-            <h3 className="text-base font-bold mb-2 text-gray-900">Declare Win</h3>
-            <p className="text-gray-600 mb-3 text-xs">Are you sure you want to declare? We will validate your sequences.</p>
+        <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-3 backdrop-blur-sm">
+          <div className="rounded-xl p-5 max-w-sm w-full shadow-2xl animate-bounce-in"
+            style={{ background: "linear-gradient(135deg, #1a1a1a 0%, #0a1f12 100%)", border: "1px solid rgba(212,168,67,0.3)" }}
+          >
+            <h3 className="text-lg font-bold mb-2 text-white">Declare Win</h3>
+            <p className="text-gray-400 mb-4 text-xs">Are you sure? Your sequences will be validated by all players.</p>
             <div className="flex gap-2">
               <button
                 onClick={handleDeclareWin}
-                className="flex-1 px-3 py-2 rounded-lg bg-emerald-500 text-black font-semibold hover:bg-emerald-400 active:scale-95 text-sm"
+                className="btn-declare flex-1 py-2.5 text-sm"
               >
                 Declare
               </button>
               <button
                 onClick={() => setShowDeclareModal(false)}
-                className="flex-1 px-3 py-2 rounded-lg bg-neutral-200 text-neutral-900 hover:bg-neutral-300 active:scale-95 text-sm font-medium"
+                className="flex-1 px-3 py-2 rounded-lg bg-white/5 text-white/70 border border-white/10 hover:bg-white/10 active:scale-95 text-sm font-medium transition-all"
               >
                 Cancel
               </button>
@@ -594,24 +552,26 @@ const GameTable = () => {
         </div>
       )}
 
-      {/* ✅ Drop Confirmation Modal */}
+      {/* Drop confirmation */}
       {showDropModal && (
-        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-3">
-          <div className="bg-neutral-800 border border-red-500/30 rounded-xl p-4 max-w-sm w-full shadow-2xl">
-            <h3 className="text-base font-bold mb-2 text-red-500">Confirm Drop</h3>
-            <p className="text-gray-300 mb-4 text-xs">
-              Are you sure you want to drop? You will likely lose 20 points (First Drop) or 40 points (Middle Drop).
+        <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-3 backdrop-blur-sm">
+          <div className="rounded-xl p-5 max-w-sm w-full shadow-2xl animate-bounce-in"
+            style={{ background: "linear-gradient(135deg, #1a1a1a 0%, #1a0a0a 100%)", border: "1px solid rgba(239,68,68,0.3)" }}
+          >
+            <h3 className="text-lg font-bold mb-2 text-red-400">Confirm Drop</h3>
+            <p className="text-gray-400 mb-4 text-xs">
+              You will lose 20 points (First Drop) or 40 points (Middle Drop). Are you sure?
             </p>
             <div className="flex gap-2">
               <button
                 onClick={confirmDrop}
-                className="flex-1 px-3 py-2 rounded-lg bg-red-600 text-white font-semibold hover:bg-red-500 active:scale-95 text-sm"
+                className="flex-1 px-3 py-2.5 rounded-lg bg-red-600 text-white font-semibold hover:bg-red-500 active:scale-95 text-sm transition-all"
               >
                 Yes, Drop
               </button>
               <button
                 onClick={() => setShowDropModal(false)}
-                className="flex-1 px-3 py-2 rounded-lg bg-neutral-700 text-neutral-200 hover:bg-neutral-600 active:scale-95 text-sm font-medium"
+                className="flex-1 px-3 py-2 rounded-lg bg-white/5 text-white/70 border border-white/10 hover:bg-white/10 active:scale-95 text-sm font-medium transition-all"
               >
                 Cancel
               </button>
@@ -633,6 +593,12 @@ const GameTable = () => {
         onVote={handleVoteSocket}
       />
 
+      <SecurityOverlay
+        error={securityError}
+        settlementStatus={settlementStatus}
+        onClose={() => dispatch(setSecurityError(null))}
+      />
+
       <NotificationCenter
         notifications={notifications}
         onClose={(id) => dispatch(removeNotification(id))}
@@ -641,10 +607,5 @@ const GameTable = () => {
     </div>
   );
 };
-
-function suitGlyph(suit) {
-  const map = { Hearts: "♥", Diamonds: "♦", Clubs: "♣", Spades: "♠" };
-  return map[suit] || "";
-}
 
 export default GameTable;

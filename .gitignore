@@ -35,3 +35,7 @@ pnpm-debug.log*
 
 # Local history for some editors
 .history
+# Local environment files
+.env
+.env.*
+!.env.example

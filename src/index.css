@@ -2,152 +2,1737 @@
 @tailwind components;
 @tailwind utilities;
 
+/* ═══════════════════════════════════════════════════
+   INDIAN RUMMY — DESIGN SYSTEM TOKENS
+   ═══════════════════════════════════════════════════ */
+:root {
+  /* Table Surface */
+  --felt-dark: #1a5c2e;
+  --felt-mid: #247a3c;
+  --felt-light: #2d9149;
+  --felt-vignette: #0a1f12;
+
+  /* Table Rim / Wood */
+  --rim-dark: #3a2415;
+  --rim-mid: #5a3825;
+  --rim-light: #7a5035;
+  --rim-highlight: #9a6a45;
+
+  /* Gold / Accent */
+  --gold: #d4a843;
+  --gold-bright: #fbbf24;
+  --gold-dim: #92702a;
+
+  /* Status Colors */
+  --pure-seq: #10b981;
+  --impure-seq: #38bdf8;
+  --set-color: #f59e0b;
+  --invalid-color: #ef4444;
+
+  /* UI Surfaces */
+  --hud-bg: rgba(0, 0, 0, 0.75);
+  --dock-bg: rgba(10, 18, 12, 0.85);
+  --dock-border: rgba(212, 168, 67, 0.25);
+  --card-slot-divider: rgba(212, 168, 67, 0.4);
+  --overlay-bg: rgba(0, 0, 0, 0.8);
+
+  /* Typography */
+  --font-game: 'Inter', system-ui, -apple-system, sans-serif;
+  --font-mono: 'JetBrains Mono', 'SF Mono', monospace;
+}
+
 @layer base {
   * {
     @apply border-zinc-200;
-  } 
+  }
   body {
     @apply bg-zinc-50 text-zinc-900 font-sans;
+    font-family: var(--font-game);
   }
 }
 
+/* ═══════════════════════════════════════════════════
+   COMPONENT CLASSES
+   ═══════════════════════════════════════════════════ */
 @layer components {
   .btn {
     @apply inline-flex items-center justify-center rounded-lg px-4 py-2 text-sm font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 disabled:opacity-50 disabled:pointer-events-none;
   }
-  
   .btn-primary {
     @apply btn bg-primary-600 text-white hover:bg-primary-700 focus:ring-primary-500;
   }
-  
   .btn-secondary {
     @apply btn bg-zinc-200 text-zinc-900 hover:bg-zinc-300 focus:ring-zinc-500;
   }
-  
   .btn-success {
     @apply btn bg-success-600 text-white hover:bg-success-700 focus:ring-success-500;
   }
-  
   .btn-danger {
     @apply btn bg-error-600 text-white hover:bg-error-700 focus:ring-error-500;
   }
-  
   .btn-warning {
     @apply btn bg-warning-600 text-white hover:bg-warning-700 focus:ring-warning-500;
   }
-  
   .card {
     @apply bg-white rounded-xl shadow-sm border border-zinc-200 p-6;
   }
-  
   .input {
     @apply block w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm placeholder-zinc-400 focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500;
   }
-  
-  .playing-card {
-    @apply relative w-16 h-24 bg-white border-2 border-zinc-300 rounded-lg shadow-sm flex items-center justify-center text-xs font-bold cursor-pointer transition-all hover:shadow-md;
+
+  /* ── Game Table: Oval Felt ── */
+  .game-table-surface {
+    position: relative;
+    width: 100%;
+    height: 100%;
+    background:
+      radial-gradient(ellipse 80% 70% at 50% 50%, var(--felt-mid) 0%, var(--felt-dark) 60%, var(--felt-vignette) 100%);
+    overflow: hidden;
   }
-  
+  .game-table-surface::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background:
+      radial-gradient(ellipse 60% 50% at 50% 50%, rgba(45, 145, 73, 0.15) 0%, transparent 70%);
+    pointer-events: none;
+  }
+
+  /* Oval table border (inner felt area) */
+  .game-table-oval {
+    position: relative;
+    width: 70%;
+    max-width: 560px;
+    aspect-ratio: 2 / 1;
+    margin: 0 auto;
+    border-radius: 50%;
+    background:
+      radial-gradient(ellipse at 50% 50%, var(--felt-light) 0%, var(--felt-mid) 40%, var(--felt-dark) 80%);
+    border: 4px solid var(--rim-mid);
+    box-shadow:
+      0 0 0 2px var(--rim-dark),
+      0 0 0 6px var(--rim-light),
+      0 0 0 8px var(--rim-dark),
+      inset 0 0 40px rgba(0, 0, 0, 0.3),
+      0 8px 32px rgba(0, 0, 0, 0.5);
+  }
+
+  /* ── Card Slot Dividers ── */
+  .card-slot-divider {
+    width: 2px;
+    height: 80%;
+    align-self: center;
+    background: linear-gradient(
+      to bottom,
+      transparent 0%,
+      var(--card-slot-divider) 20%,
+      var(--gold-dim) 50%,
+      var(--card-slot-divider) 80%,
+      transparent 100%
+    );
+    border-radius: 1px;
+    flex-shrink: 0;
+  }
+
+  /* ── Group Classification Badges ── */
+  .group-badge {
+    @apply text-[8px] font-bold uppercase tracking-wider px-1.5 py-[1px] rounded-full leading-tight;
+  }
+  .group-badge-pure {
+    background: rgba(16, 185, 129, 0.2);
+    color: var(--pure-seq);
+    border: 1px solid rgba(16, 185, 129, 0.3);
+  }
+  .group-badge-impure {
+    background: rgba(56, 189, 248, 0.2);
+    color: var(--impure-seq);
+    border: 1px solid rgba(56, 189, 248, 0.3);
+  }
+  .group-badge-set {
+    background: rgba(245, 158, 11, 0.2);
+    color: var(--set-color);
+    border: 1px solid rgba(245, 158, 11, 0.3);
+  }
+  .group-badge-invalid {
+    background: rgba(239, 68, 68, 0.15);
+    color: var(--invalid-color);
+    border: 1px solid rgba(239, 68, 68, 0.3);
+  }
+
+  /* ── Hand Dock ── */
+  .hand-dock {
+    background: var(--dock-bg);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border-top: 1px solid var(--dock-border);
+    box-shadow: 0 -4px 24px rgba(0, 0, 0, 0.4);
+  }
+
+  /* ── Player Avatar ── */
+  .player-avatar {
+    @apply flex flex-col items-center;
+    transition: transform 0.3s ease;
+  }
+  .player-avatar-ring {
+    @apply w-10 h-10 rounded-full flex items-center justify-center text-xs font-bold;
+    background: linear-gradient(135deg, #1f2937 0%, #111827 100%);
+    border: 2px solid rgba(255, 255, 255, 0.15);
+    color: #d1d5db;
+    position: relative;
+  }
+  .player-avatar-ring.active-turn {
+    border-color: var(--gold-bright);
+    box-shadow: 0 0 12px rgba(251, 191, 36, 0.5), 0 0 24px rgba(251, 191, 36, 0.2);
+    animation: turn-glow 1.5s ease-in-out infinite;
+  }
+
+  /* ── Turn Timer Ring (SVG-based) ── */
+  .turn-timer-svg {
+    position: absolute;
+    inset: -4px;
+    width: calc(100% + 8px);
+    height: calc(100% + 8px);
+    transform: rotate(-90deg);
+  }
+  .turn-timer-track {
+    fill: none;
+    stroke: rgba(255, 255, 255, 0.08);
+    stroke-width: 3;
+  }
+  .turn-timer-progress {
+    fill: none;
+    stroke: var(--gold-bright);
+    stroke-width: 3;
+    stroke-linecap: round;
+    transition: stroke-dashoffset 1s linear, stroke 0.5s ease;
+  }
+  .turn-timer-progress.warning {
+    stroke: #f59e0b;
+  }
+  .turn-timer-progress.critical {
+    stroke: #ef4444;
+    animation: timer-pulse 0.5s ease-in-out infinite;
+  }
+
+  /* ── Declare Button ── */
+  .btn-declare {
+    @apply px-4 py-2 rounded-lg font-extrabold text-sm uppercase tracking-wide;
+    background: linear-gradient(135deg, var(--gold) 0%, var(--gold-bright) 100%);
+    color: #1a1a1a;
+    box-shadow: 0 2px 12px rgba(212, 168, 67, 0.4);
+    transition: all 0.2s ease;
+  }
+  .btn-declare:hover {
+    box-shadow: 0 4px 20px rgba(212, 168, 67, 0.6);
+    transform: translateY(-1px);
+  }
+  .btn-declare:disabled {
+    opacity: 0.4;
+    box-shadow: none;
+    transform: none;
+  }
+  .btn-declare.ready {
+    animation: declare-glow 1.5s ease-in-out infinite;
+  }
+
+  /* ── Sort Button ── */
+  .btn-sort {
+    @apply px-3 py-1.5 rounded-lg font-semibold text-xs;
+    background: rgba(255, 255, 255, 0.08);
+    color: rgba(255, 255, 255, 0.8);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    transition: all 0.15s ease;
+  }
+  .btn-sort:hover {
+    background: rgba(255, 255, 255, 0.15);
+    color: white;
+  }
+  .btn-sort:active {
+    transform: scale(0.95);
+  }
+
+  /* ── Playing Card (image-based) ── */
+  .playing-card {
+    @apply relative bg-white rounded-lg shadow-md border-2 border-gray-200 cursor-pointer transition-all duration-150 select-none overflow-hidden;
+  }
+  .playing-card.selected {
+    border-color: var(--gold-bright);
+    transform: translateY(-12px);
+    box-shadow: 0 8px 16px rgba(251, 191, 36, 0.3);
+    z-index: 20;
+  }
+  .playing-card:hover:not(.selected) {
+    transform: translateY(-4px);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+  }
+
   .playing-card.hearts,
   .playing-card.diamonds {
     @apply text-red-600;
   }
-  
   .playing-card.clubs,
   .playing-card.spades {
     @apply text-zinc-900;
   }
-  
-  .playing-card.selected {
-    @apply border-primary-500 bg-primary-50 transform -translate-y-2;
+
+  /* ── Opponent Face-Down Cards ── */
+  .opponent-card-fan {
+    display: flex;
+    align-items: center;
   }
-  
-  .playing-card.selected {
-    @apply border-primary-500 bg-primary-50;
+  .opponent-card-back {
+    width: 18px;
+    height: 26px;
+    border-radius: 3px;
+    background: linear-gradient(135deg, #1e40af 0%, #1e3a8a 100%);
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+    margin-left: -10px;
   }
-  
-  @media (min-width: 640px) {
-    .playing-card.selected {
-      @apply transform -translate-y-2;
-    }
+  .opponent-card-back:first-child {
+    margin-left: 0;
   }
-  
-  .game-table {
-    @apply relative bg-green-800 rounded-full mx-auto;
+
+  /* ── Pile Stacks ── */
+  .pile-closed {
+    position: relative;
+    cursor: pointer;
+    transition: transform 0.15s ease;
   }
-  
-  .player-position {
-    @apply absolute flex flex-col items-center;
+  .pile-closed:hover {
+    transform: scale(1.05);
   }
-  
+  .pile-closed .pile-card {
+    position: absolute;
+    border-radius: 6px;
+    overflow: hidden;
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.4);
+  }
+
+  .pile-open {
+    position: relative;
+    cursor: pointer;
+    transition: transform 0.15s ease;
+  }
+  .pile-open:hover {
+    transform: scale(1.05);
+  }
+
+  /* ── Notification ── */
   .notification {
     @apply max-w-sm w-full bg-white border border-zinc-200 rounded-lg shadow-lg p-4;
   }
-  
   .notification.success {
     @apply border-success-200 bg-success-50;
   }
-  
   .notification.error {
     @apply border-error-200 bg-error-50;
   }
-  
   .notification.warning {
     @apply border-warning-200 bg-warning-50;
   }
-  
   .notification.info {
     @apply border-primary-200 bg-primary-50;
   }
-  
-  /* Mobile-specific improvements */
+
+  /* ── Mobile Improvements ── */
   @media (max-width: 640px) {
-    .card {
-      @apply p-4;
-    }
-    
-    .btn {
-      @apply py-3 px-4 text-sm;
-    }
-    
-    .input {
-      @apply py-3 text-base; /* Prevent zoom on iOS */
-    }
-    
-    /* Improve touch targets */
-    .playing-card {
-      @apply min-w-[2.5rem] min-h-[3.5rem];
-    }
-    
-    /* Better modal spacing on mobile */
-    .fixed.inset-0 {
-      @apply p-4;
-    }
+    .card { @apply p-4; }
+    .btn { @apply py-3 px-4 text-sm; }
+    .input { @apply py-3 text-base; }
+    .playing-card { @apply min-w-[2.5rem] min-h-[3.5rem]; }
+    .fixed.inset-0 { @apply p-4; }
   }
 
-  /* 🎴 Custom Rummy Table Container */
-.table-container {
-  max-width: 720px;
-  margin: 0 auto;
-  border-radius: 20px;
-  overflow: hidden;
-  background: rgba(0, 0, 0, 0.15); /* optional light dark tint */
-  box-shadow: 0 4px 20px rgba(0,0,0,0.3);
-}
-  
-  /* Smooth transitions for mobile interactions */
+  .table-container {
+    max-width: 720px;
+    margin: 0 auto;
+    border-radius: 20px;
+    overflow: hidden;
+    background: rgba(0, 0, 0, 0.15);
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+  }
+
   .card, .btn, .playing-card {
     @apply transition-all duration-200 ease-in-out;
   }
-  
-  /* Improve scrolling on mobile */
+
   @media (max-width: 640px) {
-    body {
-      @apply overflow-x-hidden;
-    }
-    
-    .overflow-x-auto {
-      -webkit-overflow-scrolling: touch;
-    }
+    body { @apply overflow-x-hidden; }
+    .overflow-x-auto { -webkit-overflow-scrolling: touch; }
+  }
+}
+
+/* ═══════════════════════════════════════════════════
+   KEYFRAME ANIMATIONS
+   ═══════════════════════════════════════════════════ */
+@keyframes turn-glow {
+  0%, 100% { box-shadow: 0 0 8px rgba(251, 191, 36, 0.4), 0 0 16px rgba(251, 191, 36, 0.15); }
+  50% { box-shadow: 0 0 16px rgba(251, 191, 36, 0.7), 0 0 32px rgba(251, 191, 36, 0.3); }
+}
+
+@keyframes declare-glow {
+  0%, 100% { box-shadow: 0 2px 12px rgba(212, 168, 67, 0.4); }
+  50% { box-shadow: 0 4px 24px rgba(251, 191, 36, 0.7), 0 0 40px rgba(251, 191, 36, 0.2); }
+}
+
+@keyframes timer-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
+@keyframes card-deal {
+  0% { transform: translate(0, 0) scale(0.3); opacity: 0; }
+  60% { opacity: 1; }
+  100% { transform: translate(var(--deal-x, 0), var(--deal-y, 0)) scale(1); opacity: 1; }
+}
+
+@keyframes card-fly-to-hand {
+  0% { transform: translate(var(--fly-from-x, 0), var(--fly-from-y, -200px)) scale(0.6); opacity: 0.5; }
+  100% { transform: translate(0, 0) scale(1); opacity: 1; }
+}
+
+@keyframes card-discard {
+  0% { transform: translate(0, 0) scale(1); opacity: 1; }
+  100% { transform: translate(var(--discard-x, 0), var(--discard-y, -200px)) scale(0.6); opacity: 0.3; }
+}
+
+@keyframes progress {
+  from { width: 0; }
+  to { width: 100%; }
+}
+
+@keyframes slide-in-up {
+  from { transform: translateY(30px); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+}
+
+@keyframes fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes confetti-fall {
+  0% { transform: translateY(-10vh) rotate(0deg); opacity: 1; }
+  100% { transform: translateY(100vh) rotate(720deg); opacity: 0; }
+}
+
+@keyframes bounce-in {
+  0% { transform: scale(0); }
+  50% { transform: scale(1.15); }
+  100% { transform: scale(1); }
+}
+
+/* Utility animation classes */
+.animate-card-deal { animation: card-deal 0.5s ease-out forwards; }
+.animate-card-fly { animation: card-fly-to-hand 0.4s ease-out forwards; }
+.animate-card-discard { animation: card-discard 0.3s ease-in forwards; }
+.animate-slide-in-up { animation: slide-in-up 0.4s ease-out forwards; }
+.animate-fade-in { animation: fade-in 0.3s ease-out forwards; }
+.animate-bounce-in { animation: bounce-in 0.4s cubic-bezier(0.34, 1.56, 0.64, 1) forwards; }
+/* ═══════════════════════════════════════════════════
+   PATCH 18 — RICH INDIAN RUMMY GAME TABLE
+   Reference-inspired purple felt, grouped cards, clean mobile landscape UX
+   ═══════════════════════════════════════════════════ */
+.rummy-pro-screen {
+  height: 100vh;
+  width: 100vw;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  background:
+    radial-gradient(circle at 0% 45%, rgba(255,255,255,0.16) 0 2px, transparent 2px 48px, rgba(255,255,255,0.08) 49px, transparent 52px),
+    linear-gradient(135deg, #6d2388 0%, #c12aa7 48%, #ff5a9f 100%);
+  color: #fff;
+  font-family: Georgia, 'Times New Roman', Inter, system-ui, sans-serif;
+}
+
+.rummy-pro-hud {
+  height: 54px;
+  flex: 0 0 54px;
+  margin: 8px 12px 0;
+  padding: 8px 12px;
+  border-radius: 28px 28px 10px 10px;
+  background: linear-gradient(180deg, rgba(41,26,86,.96), rgba(15,22,75,.98));
+  border: 4px solid rgba(112,129,116,.95);
+  border-bottom: 0;
+  box-shadow: 0 10px 22px rgba(20,0,44,.35), inset 0 1px 0 rgba(255,255,255,.18);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  z-index: 20;
+}
+.rummy-hud-left, .rummy-hud-right { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.rummy-icon-button, .rummy-green-icon {
+  width: 38px;
+  height: 38px;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 900;
+  border: 2px solid rgba(255,255,255,.55);
+  background: linear-gradient(180deg,#23b74e,#097c2a);
+  color: #fff;
+  box-shadow: 0 3px 0 rgba(0,0,0,.35), inset 0 1px 0 rgba(255,255,255,.35);
+}
+.rummy-icon-button { background: linear-gradient(180deg,#26305d,#151934); }
+.rummy-stake-pill, .rummy-balance-pill, .rummy-mini-pill, .rummy-turn-pill {
+  height: 30px;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 12px;
+  font-weight: 800;
+  letter-spacing: .01em;
+  color: #fff9be;
+  background: rgba(21,16,64,.78);
+  border: 2px solid rgba(255,255,255,.18);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.18), 0 3px 8px rgba(0,0,0,.25);
+  white-space: nowrap;
+}
+.rummy-turn-pill { color: #cbd5e1; font-size: 12px; text-transform: uppercase; }
+.rummy-turn-pill.active { background: linear-gradient(180deg,#ffe15c,#ffb11d); color: #3a2200; border-color: rgba(255,255,255,.4); }
+.coin-dot { color: #ffd33e; text-shadow: 0 1px 0 #7a4a00; font-size: 13px; }
+.rummy-drop-btn, .rummy-show-btn {
+  height: 32px;
+  border-radius: 10px;
+  padding: 0 14px;
+  font-weight: 900;
+  border: 2px solid rgba(255,255,255,.25);
+  box-shadow: 0 3px 0 rgba(0,0,0,.32), inset 0 1px 0 rgba(255,255,255,.35);
+}
+.rummy-drop-btn { background: linear-gradient(180deg,#ff6b75,#bd1627); color: white; }
+.rummy-show-btn { background: linear-gradient(180deg,#26cf53,#088427); color: white; }
+.rummy-show-btn:disabled { filter: grayscale(.85); opacity: .45; }
+
+.rummy-purple-table-wrap {
+  flex: 1 1 auto;
+  min-height: 0;
+  padding: 0 12px;
+  display: flex;
+  align-items: stretch;
+}
+.rummy-purple-table {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  border-radius: 0 0 28px 28px;
+  overflow: hidden;
+  border: 5px solid rgba(36,46,62,.95);
+  border-top: 0;
+  background:
+    radial-gradient(ellipse at 50% 50%, rgba(255,62,183,.6) 0%, rgba(170,16,138,.75) 45%, rgba(33,24,84,.95) 100%),
+    linear-gradient(180deg,#702b89,#35185e);
+  box-shadow: inset 0 0 90px rgba(21,0,76,.65), 0 12px 26px rgba(42,0,63,.45);
+}
+.table-pattern {
+  position:absolute; inset:0;
+  background-image:
+    radial-gradient(circle at 50% 50%, rgba(255,255,255,.08) 0 1px, transparent 1px),
+    linear-gradient(45deg, rgba(255,255,255,.035) 25%, transparent 25%, transparent 75%, rgba(255,255,255,.035) 75%),
+    linear-gradient(45deg, rgba(255,255,255,.035) 25%, transparent 25%, transparent 75%, rgba(255,255,255,.035) 75%);
+  background-size: 18px 18px, 26px 26px, 26px 26px;
+  background-position: 0 0, 0 0, 13px 13px;
+  opacity:.48;
+}
+.table-glow { position:absolute; inset:0; background: radial-gradient(ellipse at center, rgba(255,89,207,.33), transparent 55%); }
+
+.rummy-table-center {
+  position: absolute;
+  top: 42%;
+  left: 50%;
+  transform: translate(-50%,-50%);
+  width: min(360px, 45vw);
+  display: grid;
+  grid-template-columns: 1fr 96px 1fr;
+  align-items: center;
+  justify-items: center;
+  gap: 14px;
+  z-index: 3;
+}
+.rummy-phase-label {
+  position: absolute;
+  top: calc(100% + 10px);
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: clamp(18px, 2.4vw, 24px);
+  color: #fff0ff;
+  text-shadow: 0 2px 4px rgba(0,0,0,.55);
+  white-space: nowrap;
+}
+.rummy-action-arrow {
+  position:absolute;
+  top:-34px;
+  left:50%;
+  transform: translateX(-50%);
+  width:32px; height:32px;
+  border-radius:999px;
+  background: linear-gradient(180deg,#2bd954,#099332);
+  border: 2px solid rgba(255,255,255,.7);
+  box-shadow: 0 2px 0 rgba(0,0,0,.4);
+  display:flex; align-items:center; justify-content:center;
+  font-size:20px; font-weight:900;
+}
+.rummy-deck-zone, .rummy-open-zone {
+  position: relative;
+  width: 92px;
+  height: 118px;
+  border: 0;
+  background: transparent;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  transition: transform .15s ease, filter .15s ease;
+}
+.rummy-deck-zone.enabled, .rummy-open-zone.enabled { cursor: pointer; }
+.rummy-deck-zone.enabled:hover, .rummy-open-zone.enabled:hover { transform: translateY(-4px) scale(1.03); filter: drop-shadow(0 0 12px rgba(255,224,55,.75)); }
+.deck-stack { position: relative; width: 64px; height: 86px; }
+.deck-card { position:absolute; width:64px; height:86px; border-radius:6px; border:2px solid #fff; box-shadow: 0 4px 8px rgba(0,0,0,.4); }
+.deck-card.one { transform: rotate(-14deg) translate(-7px,4px); background:#fff; }
+.deck-card.two { transform: rotate(-8deg) translate(-3px,2px); background:#fff; }
+.deck-card.main { background: repeating-conic-gradient(#fff 0% 25%, #777 0% 50%) 50% / 13px 13px; }
+.deck-count { position:absolute; bottom:0; left:50%; transform:translateX(-50%); font-size:11px; color:#fff6bc; font-weight:800; text-shadow:0 1px 2px #000; }
+.rummy-open-card, .rummy-empty-card { width:64px; height:86px; border-radius:7px; background:#fff; border:2px solid #fff; box-shadow: 0 6px 10px rgba(0,0,0,.4); overflow:hidden; display:flex; align-items:center; justify-content:center; }
+.rummy-open-card img { width:100%; height:100%; object-fit:contain; }
+.rummy-empty-card { color:#444; font-size:11px; font-weight:900; }
+.manual-card { width:100%; height:100%; display:flex; flex-direction:column; align-items:center; justify-content:center; font-size:18px; font-weight:900; background:#fff; }
+.manual-card.red { color:#e11d48; } .manual-card.black { color:#111827; }
+.open-history-fan { position:relative; width:105px; height:90px; }
+.open-history-fan .rummy-open-card { position:absolute; top:0; left:20px; }
+.open-history-fan .fan-0 { transform: rotate(-17deg) translateX(-18px); }
+.open-history-fan .fan-1 { transform: rotate(-6deg); }
+.open-history-fan .fan-2 { transform: rotate(8deg) translateX(18px); }
+.history-toggle { position:absolute; right:4px; top:4px; width:20px; height:20px; border-radius:999px; background:#159334; border:1px solid #fff; color:#fff; font-weight:900; display:flex; align-items:center; justify-content:center; }
+
+.rummy-seat { position:absolute; z-index:4; display:flex; flex-direction:column; align-items:center; gap:2px; }
+.rummy-seat-top { top: 8px; left:50%; transform:translateX(-50%); }
+.rummy-seat-top-left { top: 18px; left: 14%; }
+.rummy-seat-top-right { top: 18px; right: 14%; }
+.rummy-seat-left { left: 45px; top: 38%; }
+.rummy-seat-right { right: 45px; top: 38%; }
+.rummy-me-seat { position:absolute; z-index:4; bottom: 8px; left: 50%; transform:translateX(-50%); display:flex; flex-direction:column; align-items:center; gap:2px; opacity:.95; }
+.seat-avatar { position:relative; width:58px; height:58px; border-radius:999px; background: radial-gradient(circle,#fff 0 56%,#ffd36f 58%,#8235ad 70%,#2e1b5e 100%); border:2px solid #fff; box-shadow:0 4px 10px rgba(0,0,0,.45); display:flex; align-items:center; justify-content:center; color:#1b1242; font-size:24px; font-weight:900; }
+.seat-avatar.me { width:48px; height:48px; }
+.seat-avatar.active { box-shadow:0 0 0 4px rgba(255,226,67,.55), 0 0 20px rgba(255,226,67,.75); }
+.seat-avatar small { position:absolute; right:-7px; top:-8px; min-width:22px; height:22px; border-radius:999px; background:#241c49; color:#fff; font-size:12px; display:flex; align-items:center; justify-content:center; border:1px solid rgba(255,255,255,.45); }
+.seat-name { color:#fff7df; font-size:14px; text-shadow:0 2px 3px rgba(0,0,0,.75); max-width:90px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+
+.rummy-hand-dock-pro { flex:0 0 176px; margin: 0 14px 10px; z-index: 10; }
+.rummy-hand-shell { height:100%; position:relative; display:flex; flex-direction:column; justify-content:flex-end; }
+.rummy-score-box { position:absolute; left:10px; top:-42px; min-width:110px; padding:8px 12px; border-radius:8px; background:linear-gradient(180deg,rgba(255,121,208,.9),rgba(156,35,147,.9)); border:1px solid rgba(255,255,255,.25); color:#fff8ff; font-size:18px; box-shadow:0 4px 10px rgba(0,0,0,.35); }
+.rummy-hand-actions { height:38px; display:flex; align-items:center; gap:8px; justify-content:flex-end; padding:0 8px 4px; }
+.hand-title { margin-right:auto; display:flex; flex-direction:column; line-height:1.05; color:#fff; }
+.hand-title strong { font-size:13px; text-transform:uppercase; letter-spacing:.12em; color:#ffe2ff; }
+.hand-title span { font-size:12px; opacity:.75; }
+.rummy-hand-actions button { height:29px; padding:0 12px; border-radius:9px; border:1px solid rgba(255,255,255,.22); background:linear-gradient(180deg,#402365,#1c143e); color:#fff; font-weight:800; font-size:12px; box-shadow:0 2px 0 rgba(0,0,0,.28); }
+.rummy-hand-actions button:disabled { opacity:.38; filter:grayscale(.8); }
+.rummy-hand-actions .discard-action { background:linear-gradient(180deg,#2bd954,#098c31); }
+.rummy-groups-row { flex:1; display:flex; align-items:flex-end; gap:18px; overflow-x:auto; overflow-y:visible; padding:8px 10px 0; scrollbar-width:none; scroll-snap-type:x proximity; -webkit-overflow-scrolling:touch; }
+.rummy-groups-row::-webkit-scrollbar { display:none; }
+.rummy-card-group { flex:0 0 auto; min-width:190px; max-width:320px; display:flex; flex-direction:column; justify-content:flex-end; scroll-snap-align:start; }
+.rummy-card-group.ungrouped-free { min-width:max-content; max-width:none; }
+.group-select { display:flex; align-items:flex-end; height:92px; border:0; background:transparent; padding:0; }
+.rummy-card-group.ungrouped-free .group-select { height:104px; padding:0 10px; gap:4px; min-width:max-content; }
+.group-select.active { filter: drop-shadow(0 0 10px rgba(255,229,76,.9)); }
+.rummy-hand-card { width:55px; height:74px; margin-right:-13px; border:0; padding:0; background:#fff; border-radius:7px 7px 0 0; overflow:hidden; box-shadow:0 3px 7px rgba(0,0,0,.38); transition:transform .14s ease, filter .14s ease; flex:0 0 auto; }
+.rummy-card-group.ungrouped-free .rummy-hand-card { width:58px; height:78px; margin-right:0; border-radius:8px 8px 0 0; }
+.rummy-hand-card:last-child { margin-right:0; }
+.rummy-hand-card img { width:100%; height:100%; object-fit:contain; }
+.rummy-hand-card.selected { transform: translateY(-16px); filter: drop-shadow(0 0 10px rgba(255,235,85,.95)); z-index:3; }
+.rummy-group-label { height:25px; display:flex; align-items:center; justify-content:center; color:#fff; font-size:16px; line-height:1; text-shadow:0 1px 2px rgba(0,0,0,.5); border-radius:0 0 4px 4px; box-shadow: inset 0 1px 0 rgba(255,255,255,.24); }
+.rummy-card-group.ungrouped-free .rummy-group-label { min-width:100%; border-radius:0 0 7px 7px; }
+.rummy-group-label.good { background:linear-gradient(180deg,#25c83e,#06951e); }
+.rummy-group-label.bad { background:linear-gradient(180deg,#ff654d,#d71c2e); }
+
+@media (max-width: 900px) {
+  .rummy-pro-hud { height:44px; flex-basis:44px; margin:5px 7px 0; padding:4px 7px; border-width:3px; }
+  .rummy-icon-button, .rummy-green-icon { width:32px; height:32px; }
+  .rummy-stake-pill, .rummy-balance-pill, .rummy-mini-pill, .rummy-turn-pill { height:26px; padding:0 8px; font-size:12px; }
+  .rummy-drop-btn, .rummy-show-btn { height:27px; padding:0 9px; font-size:12px; }
+  .rummy-purple-table-wrap { padding:0 7px; flex:0 0 46vh; }
+  .rummy-purple-table { border-width:3px; border-radius:0 0 20px 20px; }
+  .rummy-seat-left { left:16px; } .rummy-seat-right { right:16px; }
+  .seat-avatar { width:46px; height:46px; font-size:19px; }
+  .seat-name { font-size:12px; }
+  .rummy-table-center { top:43%; width:min(300px,72vw); grid-template-columns:1fr 58px 1fr; gap:6px; }
+  .rummy-deck-zone, .rummy-open-zone { width:66px; height:86px; }
+  .deck-stack, .deck-card, .rummy-open-card, .rummy-empty-card { width:52px; height:70px; }
+  .rummy-phase-label { font-size:16px; top:calc(100% + 4px); }
+  .rummy-action-arrow { width:24px; height:24px; font-size:15px; top:-24px; }
+  .rummy-hand-dock-pro { flex:1 1 auto; min-height:146px; margin:0 7px 7px; }
+  .rummy-hand-actions { height:33px; gap:5px; padding:0 4px 3px; }
+  .rummy-hand-card { width:46px; height:62px; margin-right:-12px; }
+  .rummy-card-group { min-width:154px; }
+  .rummy-card-group.ungrouped-free .rummy-hand-card { width:48px; height:64px; margin-right:2px; }
+  .rummy-card-group.ungrouped-free .group-select { height:86px; gap:2px; padding:0 6px; }
+  .rummy-group-label { height:22px; font-size:14px; }
+  .rummy-score-box { font-size:15px; top:-36px; min-width:96px; padding:6px 10px; }
+}
+
+@media (max-width: 680px) {
+  .rummy-mini-pill, .rummy-turn-pill { display:none; }
+  .rummy-hand-actions button { height:28px; padding:0 7px; font-size:10px; }
+  .hand-title { display:none; }
+  .rummy-score-box { display:none; }
+  .rummy-groups-row { gap:10px; padding-top:6px; }
+}
+
+
+/* PATCH 19 — Decongested mobile landscape and free ungrouped hand */
+@media (max-height: 520px) and (orientation: landscape) {
+  .rummy-pro-hud { height:40px; flex-basis:40px; margin-top:4px; }
+  .rummy-purple-table-wrap { flex:0 0 44vh; }
+  .rummy-seat-top { top:2px; }
+  .rummy-seat-top-left, .rummy-seat-top-right { top:7px; }
+  .seat-avatar { width:40px; height:40px; font-size:17px; }
+  .seat-avatar small { min-width:18px; height:18px; font-size:10px; }
+  .seat-name { font-size:11px; }
+  .rummy-me-seat { bottom:2px; }
+  .seat-avatar.me { width:38px; height:38px; }
+  .rummy-table-center { width:min(275px,68vw); }
+  .rummy-deck-zone, .rummy-open-zone { width:58px; height:76px; }
+  .deck-stack, .deck-card, .rummy-open-card, .rummy-empty-card { width:46px; height:62px; }
+  .deck-count { font-size:10px; bottom:-2px; }
+  .rummy-hand-dock-pro { min-height:142px; }
+  .rummy-card-group.ungrouped-free .rummy-hand-card { width:44px; height:59px; margin-right:2px; }
+}
+
+/* ═══════════════════════════════════════════════════
+   PATCH 20 — Real Indian Rummy table proportion fix
+   Goal: match compact Indian-rummy reference: one framed board,
+   table + hand inside same play surface, no huge empty pink hand space.
+   ═══════════════════════════════════════════════════ */
+.rummy-pro-screen {
+  align-items: center;
+  justify-content: flex-start;
+  padding: 0 8px 8px;
+  background:
+    radial-gradient(circle at 0% 46%, rgba(255,255,255,0.12) 0 2px, transparent 2px 48px, rgba(255,255,255,0.08) 49px, transparent 52px),
+    linear-gradient(135deg, #79209a 0%, #b72aa5 47%, #e44399 100%);
+}
+
+.rummy-pro-hud {
+  width: min(100%, 1040px);
+  margin: 8px auto 0;
+  height: 50px;
+  flex: 0 0 50px;
+  border-radius: 30px 30px 0 0;
+  border-color: rgba(91,105,111,.95);
+}
+
+.rummy-play-frame {
+  position: relative;
+  width: min(100%, 1040px);
+  flex: 1 1 auto;
+  min-height: 0;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border: 5px solid rgba(36,46,62,.96);
+  border-top: 0;
+  border-radius: 0 0 24px 24px;
+  background:
+    radial-gradient(ellipse at 50% 30%, rgba(255,83,201,.58) 0%, rgba(166,22,143,.72) 44%, rgba(39,22,90,.96) 100%);
+  box-shadow:
+    inset 0 0 72px rgba(19,0,71,.56),
+    0 12px 30px rgba(37,0,61,.35);
+}
+
+.rummy-purple-table-wrap {
+  flex: 0 0 58%;
+  padding: 0;
+  min-height: 0;
+}
+
+.rummy-purple-table {
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+  background:
+    radial-gradient(ellipse at 50% 52%, rgba(255,63,192,.45) 0%, rgba(174,17,143,.48) 46%, rgba(30,20,82,.86) 100%);
+}
+
+.rummy-purple-table::after {
+  content: "";
+  position: absolute;
+  left: 2.5%;
+  right: 2.5%;
+  bottom: 0;
+  height: 2px;
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,.16), transparent);
+  z-index: 5;
+}
+
+.rummy-table-center {
+  top: 55%;
+  width: min(290px, 36vw);
+  grid-template-columns: 1fr 58px 1fr;
+  gap: 12px;
+}
+
+.rummy-phase-label {
+  top: calc(100% + 8px);
+  font-size: clamp(16px, 2vw, 22px);
+  font-weight: 700;
+  letter-spacing: .01em;
+}
+
+.rummy-action-arrow {
+  top: -28px;
+  width: 26px;
+  height: 26px;
+  font-size: 16px;
+}
+
+.rummy-deck-zone, .rummy-open-zone {
+  width: 74px;
+  height: 98px;
+}
+.deck-stack, .deck-card, .rummy-open-card, .rummy-empty-card {
+  width: 54px;
+  height: 72px;
+}
+.deck-count {
+  bottom: -5px;
+  font-size: 11px;
+  line-height: 1.05;
+}
+
+/* Player identity: top opponents only. Your identity lives in hand area. */
+.rummy-me-seat { display: none; }
+.rummy-seat-top { top: 12px; }
+.rummy-seat-top-left { top: 32px; left: 8%; }
+.rummy-seat-top-right { top: 32px; right: 8%; }
+.rummy-seat-left { left: 28px; top: 42%; }
+.rummy-seat-right { right: 28px; top: 42%; }
+.seat-avatar { width: 50px; height: 50px; font-size: 22px; }
+.seat-avatar small { right: -8px; top: -9px; }
+.seat-name { font-size: 13px; max-width: 92px; }
+
+.rummy-hand-dock-pro {
+  flex: 1 1 42%;
+  min-height: 0;
+  margin: 0;
+  padding: 0 18px 12px;
+  z-index: 10;
+  background: linear-gradient(180deg, rgba(149,22,132,.52), rgba(229,52,151,.82));
+}
+
+.rummy-hand-shell {
+  height: 100%;
+  justify-content: flex-start;
+  padding-top: 6px;
+}
+
+.rummy-score-box {
+  top: -70px;
+  left: 12px;
+  min-width: 118px;
+  border-radius: 8px;
+}
+
+.rummy-hand-actions {
+  height: 38px;
+  padding: 0 0 3px;
+  gap: 9px;
+}
+.hand-title strong {
+  font-size: 15px;
+  letter-spacing: .09em;
+  color: #fff3ff;
+}
+.hand-title span { font-size: 13px; opacity: .92; }
+.rummy-hand-actions button {
+  height: 31px;
+  min-width: 78px;
+  font-size: 13px;
+  border-radius: 10px;
+}
+
+.rummy-groups-row {
+  flex: 1;
+  min-height: 0;
+  align-items: flex-end;
+  gap: 20px;
+  padding: 7px 2px 0;
+  overflow-x: auto;
+  overflow-y: visible;
+}
+
+.rummy-card-group {
+  min-width: 184px;
+  max-width: 300px;
+}
+.rummy-card-group.ungrouped-free {
+  min-width: max-content;
+  padding-right: 20px;
+}
+.group-select { height: 96px; }
+.rummy-card-group.ungrouped-free .group-select {
+  height: 104px;
+  gap: 8px;
+  padding: 0 8px;
+}
+.rummy-hand-card {
+  width: 54px;
+  height: 72px;
+  margin-right: -10px;
+}
+.rummy-card-group.ungrouped-free .rummy-hand-card {
+  width: 60px;
+  height: 80px;
+  margin-right: 0;
+}
+.rummy-group-label {
+  height: 25px;
+  font-size: 16px;
+  font-weight: 700;
+}
+
+@media (max-width: 900px) {
+  .rummy-pro-screen { padding: 0 4px 5px; }
+  .rummy-pro-hud {
+    width: 100%;
+    height: 42px;
+    flex-basis: 42px;
+    margin: 4px auto 0;
+    padding: 4px 8px;
+    border-width: 4px;
+  }
+  .rummy-play-frame {
+    width: 100%;
+    border-width: 4px;
+    border-radius: 0 0 19px 19px;
+  }
+  .rummy-purple-table-wrap { flex-basis: 54%; }
+  .rummy-hand-dock-pro { flex-basis: 46%; padding: 0 12px 8px; }
+  .rummy-table-center {
+    top: 54%;
+    width: min(250px, 43vw);
+    grid-template-columns: 1fr 46px 1fr;
+    gap: 9px;
+  }
+  .rummy-deck-zone, .rummy-open-zone { width: 58px; height: 78px; }
+  .deck-stack, .deck-card, .rummy-open-card, .rummy-empty-card { width: 43px; height: 58px; }
+  .rummy-phase-label { font-size: 15px; top: calc(100% + 5px); }
+  .rummy-action-arrow { width: 22px; height: 22px; top: -22px; font-size: 13px; }
+  .rummy-seat-top { top: 4px; }
+  .rummy-seat-top-left { top: 14px; left: 8%; }
+  .rummy-seat-top-right { top: 14px; right: 8%; }
+  .rummy-seat-left { left: 14px; top: 40%; }
+  .rummy-seat-right { right: 14px; top: 40%; }
+  .seat-avatar { width: 38px; height: 38px; font-size: 17px; }
+  .seat-name { font-size: 11px; max-width: 70px; }
+  .rummy-score-box { top: -48px; left: 8px; font-size: 14px; min-width: 90px; padding: 6px 9px; }
+  .rummy-hand-actions { height: 34px; gap: 6px; }
+  .rummy-hand-actions button { height: 29px; min-width: 60px; padding: 0 8px; font-size: 11px; }
+  .hand-title strong { font-size: 13px; }
+  .hand-title span { font-size: 12px; }
+  .rummy-groups-row { gap: 13px; padding-top: 5px; }
+  .rummy-card-group { min-width: 150px; }
+  .group-select { height: 80px; }
+  .rummy-card-group.ungrouped-free .group-select { height: 88px; gap: 5px; padding: 0 5px; }
+  .rummy-hand-card { width: 43px; height: 58px; margin-right: -9px; }
+  .rummy-card-group.ungrouped-free .rummy-hand-card { width: 47px; height: 63px; margin-right: 0; }
+  .rummy-group-label { height: 22px; font-size: 13px; }
+}
+
+@media (max-width: 680px) {
+  .rummy-balance-pill { display:none; }
+  .rummy-turn-pill { display:inline-flex; }
+  .rummy-mini-pill { display:none; }
+  .hand-title { display:flex; }
+  .rummy-hand-actions button { min-width:auto; padding:0 7px; font-size:10px; }
+  .rummy-score-box { display:none; }
+}
+
+@media (max-height: 520px) and (orientation: landscape) {
+  .rummy-pro-hud { height: 38px; flex-basis: 38px; }
+  .rummy-icon-button, .rummy-green-icon { width:30px; height:30px; }
+  .rummy-stake-pill, .rummy-balance-pill, .rummy-turn-pill { height:25px; font-size:11px; }
+  .rummy-play-frame { flex: 1 1 auto; }
+  .rummy-purple-table-wrap { flex-basis: 53%; }
+  .rummy-hand-dock-pro { flex-basis: 47%; padding-bottom: 6px; }
+  .rummy-table-center { top: 55%; width:min(230px,44vw); }
+  .rummy-deck-zone, .rummy-open-zone { width:54px; height:72px; }
+  .deck-stack, .deck-card, .rummy-open-card, .rummy-empty-card { width:40px; height:54px; }
+  .deck-count { font-size:9px; }
+  .rummy-phase-label { font-size:14px; }
+  .rummy-hand-actions { height:31px; }
+  .rummy-card-group.ungrouped-free .group-select { height:80px; gap:4px; }
+  .rummy-card-group.ungrouped-free .rummy-hand-card { width:43px; height:58px; }
+  .rummy-group-label { height:20px; font-size:12px; }
+}
+
+/* ═══════════════════════════════════════════════════
+   PATCH 22 — Production mobile reference layout
+   Goal: compact Indian Rummy board like reference image:
+   one framed board, table + cards inside the same surface,
+   no separate oversized pink hand panel, mobile-first landscape.
+   ═══════════════════════════════════════════════════ */
+.rummy-pro-screen {
+  justify-content: center;
+  padding: 2px 8px 8px;
+}
+
+.rummy-pro-hud {
+  max-width: 1040px;
+  height: 48px;
+  flex: 0 0 48px;
+  margin-top: 4px;
+  border-radius: 28px 28px 0 0;
+  background: linear-gradient(180deg, #2c2367 0%, #1e184f 100%);
+}
+
+.rummy-play-frame {
+  height: min(calc(100vh - 58px), 620px);
+  max-width: 1040px;
+  min-height: 360px;
+  display: block;
+  position: relative;
+  border-radius: 0 0 26px 26px;
+  overflow: hidden;
+  background:
+    radial-gradient(ellipse at 50% 38%, rgba(255,55,193,.58) 0%, rgba(174,19,145,.72) 46%, rgba(29,18,77,.98) 100%);
+}
+
+.rummy-purple-table-wrap {
+  position: absolute;
+  inset: 0;
+  height: 100%;
+  padding: 0;
+  flex: none;
+}
+
+.rummy-purple-table {
+  height: 100%;
+  min-height: 0;
+  border: 0;
+  border-radius: 0 0 20px 20px;
+  overflow: hidden;
+}
+
+.rummy-purple-table::after {
+  bottom: 116px;
+  opacity: .25;
+}
+
+.rummy-table-center {
+  top: 46%;
+  width: min(310px, 38vw);
+  grid-template-columns: 1fr 54px 1fr;
+  gap: 13px;
+  z-index: 6;
+}
+
+.rummy-deck-zone,
+.rummy-open-zone {
+  width: 72px;
+  height: 94px;
+}
+
+.deck-stack,
+.deck-card,
+.rummy-open-card,
+.rummy-empty-card {
+  width: 55px;
+  height: 74px;
+}
+
+.rummy-phase-label {
+  top: calc(100% + 5px);
+  font-size: clamp(16px, 1.9vw, 21px);
+  line-height: 1;
+  white-space: nowrap;
+  text-shadow: 0 2px 4px rgba(0,0,0,.65);
+}
+
+.rummy-action-arrow {
+  top: -27px;
+}
+
+.rummy-seat-top { top: 8px; }
+.rummy-seat-top-left { top: 34px; left: 8%; }
+.rummy-seat-top-right { top: 34px; right: 8%; }
+.rummy-seat-left { left: 26px; top: 40%; }
+.rummy-seat-right { right: 26px; top: 40%; }
+.seat-avatar { width: 48px; height: 48px; font-size: 21px; }
+.seat-name { font-size: 12px; }
+
+.rummy-hand-dock-pro {
+  position: absolute;
+  left: 18px;
+  right: 18px;
+  bottom: 6px;
+  height: 126px;
+  min-height: 0;
+  margin: 0;
+  padding: 0;
+  background: transparent;
+  z-index: 12;
+}
+
+.rummy-hand-shell {
+  height: 100%;
+  padding: 0;
+  position: relative;
+}
+
+.rummy-score-box {
+  top: -74px;
+  left: 0;
+  min-width: 112px;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  font-size: 17px;
+  border-radius: 8px;
+}
+
+.rummy-hand-actions {
+  position: absolute;
+  right: 0;
+  top: -46px;
+  height: 36px;
+  padding: 0;
+  gap: 7px;
+  z-index: 14;
+}
+
+.rummy-hand-actions .hand-title {
+  display: none;
+}
+
+.rummy-hand-actions button {
+  height: 30px;
+  min-width: 68px;
+  padding: 0 10px;
+  border-radius: 10px;
+  font-size: 12px;
+  box-shadow: 0 3px 0 rgba(0,0,0,.28), inset 0 1px 0 rgba(255,255,255,.25);
+}
+
+.rummy-groups-row {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 116px;
+  padding: 0 2px;
+  gap: 18px;
+  align-items: flex-end;
+  overflow-x: auto;
+  overflow-y: visible;
+  scroll-padding-left: 8px;
+}
+
+.rummy-card-group {
+  min-width: 166px;
+  max-width: 270px;
+}
+
+.rummy-card-group.ungrouped-free {
+  min-width: max-content;
+  padding-right: 18px;
+}
+
+.group-select {
+  height: 88px;
+  align-items: flex-end;
+}
+
+.rummy-card-group.ungrouped-free .group-select {
+  height: 90px;
+  gap: 0;
+  padding: 0 6px;
+}
+
+.rummy-hand-card {
+  width: 51px;
+  height: 69px;
+  margin-right: -12px;
+  border-radius: 7px 7px 0 0;
+}
+
+.rummy-card-group.ungrouped-free .rummy-hand-card {
+  width: 50px;
+  height: 68px;
+  margin-right: -4px;
+}
+
+.rummy-hand-card.selected {
+  transform: translateY(-18px) scale(1.02);
+}
+
+.rummy-group-label {
+  height: 24px;
+  font-size: 15px;
+  border-radius: 0 0 5px 5px;
+}
+
+@media (max-width: 900px) {
+  .rummy-pro-screen { padding: 2px 4px 5px; }
+  .rummy-pro-hud {
+    height: 42px;
+    flex-basis: 42px;
+    margin-top: 2px;
+    border-radius: 24px 24px 0 0;
+  }
+  .rummy-play-frame {
+    height: calc(100vh - 49px);
+    min-height: 314px;
+    border-width: 4px;
+    border-radius: 0 0 20px 20px;
+  }
+  .rummy-purple-table::after { bottom: 98px; }
+  .rummy-table-center {
+    top: 44%;
+    width: min(255px, 42vw);
+    grid-template-columns: 1fr 42px 1fr;
+    gap: 8px;
+  }
+  .rummy-deck-zone,
+  .rummy-open-zone { width: 58px; height: 76px; }
+  .deck-stack,
+  .deck-card,
+  .rummy-open-card,
+  .rummy-empty-card { width: 43px; height: 58px; }
+  .deck-count { font-size: 9px; bottom: -4px; }
+  .rummy-phase-label { font-size: 14px; top: calc(100% + 4px); }
+  .rummy-action-arrow { top: -22px; width: 22px; height: 22px; font-size: 13px; }
+  .rummy-seat-top { top: 4px; }
+  .rummy-seat-top-left { top: 17px; left: 8%; }
+  .rummy-seat-top-right { top: 17px; right: 8%; }
+  .rummy-seat-left { left: 14px; top: 37%; }
+  .rummy-seat-right { right: 14px; top: 37%; }
+  .seat-avatar { width: 38px; height: 38px; font-size: 17px; }
+  .seat-avatar small { min-width: 18px; height: 18px; font-size: 10px; }
+  .seat-name { font-size: 10px; max-width: 70px; }
+  .rummy-hand-dock-pro {
+    left: 14px;
+    right: 14px;
+    bottom: 5px;
+    height: 104px;
+  }
+  .rummy-score-box {
+    top: -58px;
+    min-width: 88px;
+    height: 34px;
+    padding: 5px 9px;
+    font-size: 14px;
+  }
+  .rummy-hand-actions {
+    top: -38px;
+    height: 30px;
+    gap: 5px;
+  }
+  .rummy-hand-actions button {
+    height: 27px;
+    min-width: 52px;
+    padding: 0 7px;
+    font-size: 10px;
+  }
+  .rummy-groups-row {
+    height: 98px;
+    gap: 10px;
+  }
+  .rummy-card-group { min-width: 134px; }
+  .group-select { height: 74px; }
+  .rummy-card-group.ungrouped-free .group-select { height: 76px; padding: 0 5px; }
+  .rummy-hand-card { width: 41px; height: 56px; margin-right: -9px; }
+  .rummy-card-group.ungrouped-free .rummy-hand-card { width: 42px; height: 57px; margin-right: -5px; }
+  .rummy-group-label { height: 20px; font-size: 12px; }
+}
+
+@media (max-height: 520px) and (orientation: landscape) {
+  .rummy-pro-screen { padding: 1px 3px 4px; }
+  .rummy-pro-hud {
+    height: 36px;
+    flex-basis: 36px;
+    border-width: 3px;
+    padding: 3px 7px;
+  }
+  .rummy-icon-button,
+  .rummy-green-icon { width: 28px; height: 28px; }
+  .rummy-stake-pill,
+  .rummy-balance-pill,
+  .rummy-turn-pill { height: 24px; font-size: 10px; padding: 0 8px; }
+  .rummy-play-frame {
+    height: calc(100vh - 41px);
+    min-height: 284px;
+    border-width: 3px;
+  }
+  .rummy-purple-table::after { bottom: 86px; }
+  .rummy-table-center {
+    top: 43%;
+    width: min(220px, 41vw);
+    grid-template-columns: 1fr 36px 1fr;
+    gap: 6px;
+  }
+  .rummy-deck-zone,
+  .rummy-open-zone { width: 50px; height: 66px; }
+  .deck-stack,
+  .deck-card,
+  .rummy-open-card,
+  .rummy-empty-card { width: 38px; height: 51px; }
+  .rummy-phase-label { font-size: 13px; top: calc(100% + 3px); }
+  .rummy-seat-top-left,
+  .rummy-seat-top-right { top: 10px; }
+  .rummy-seat-left,
+  .rummy-seat-right { top: 35%; }
+  .seat-avatar { width: 33px; height: 33px; font-size: 15px; }
+  .seat-name { font-size: 9px; }
+  .rummy-hand-dock-pro {
+    left: 10px;
+    right: 10px;
+    bottom: 4px;
+    height: 90px;
+  }
+  .rummy-score-box { display: none; }
+  .rummy-hand-actions {
+    top: -31px;
+    height: 27px;
+    gap: 4px;
+  }
+  .rummy-hand-actions button {
+    height: 24px;
+    min-width: 45px;
+    padding: 0 5px;
+    font-size: 9px;
+    border-radius: 7px;
+  }
+  .rummy-groups-row { height: 86px; gap: 8px; }
+  .rummy-card-group { min-width: 118px; }
+  .group-select { height: 66px; }
+  .rummy-card-group.ungrouped-free .group-select { height: 68px; }
+  .rummy-hand-card { width: 36px; height: 49px; margin-right: -8px; }
+  .rummy-card-group.ungrouped-free .rummy-hand-card { width: 38px; height: 51px; margin-right: -6px; }
+  .rummy-group-label { height: 18px; font-size: 11px; }
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   Patch 23: Drag-to-discard UX, mobile-first realistic rummy action
+   ═══════════════════════════════════════════════════════════════ */
+.rummy-discard-drop-zone {
+  position: relative;
+  isolation: isolate;
+  transition: transform .16s ease, filter .16s ease, box-shadow .16s ease, border-color .16s ease;
+}
+
+.rummy-discard-drop-zone.enabled {
+  border-color: rgba(255, 232, 99, .9);
+  box-shadow: 0 0 0 2px rgba(255, 232, 99, .22), 0 10px 24px rgba(0,0,0,.42), inset 0 0 20px rgba(255, 232, 99, .10);
+}
+
+.rummy-discard-drop-zone.drop-active,
+.rummy-discard-drop-zone.enabled:hover {
+  transform: translateY(-6px) scale(1.07);
+  filter: drop-shadow(0 0 18px rgba(255, 234, 89, .95));
+  box-shadow: 0 0 0 4px rgba(255, 231, 83, .38), 0 18px 32px rgba(0,0,0,.55), inset 0 0 26px rgba(255,255,255,.12);
+}
+
+.rummy-discard-drop-zone.drop-active::after {
+  content: "";
+  position: absolute;
+  inset: -12px;
+  border: 2px dashed rgba(255, 243, 145, .95);
+  border-radius: 16px;
+  animation: dropZonePulse .7s ease-in-out infinite alternate;
+  pointer-events: none;
+  z-index: -1;
+}
+
+.drop-card-hint {
+  position: absolute;
+  left: 50%;
+  bottom: -22px;
+  transform: translateX(-50%);
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: linear-gradient(180deg, #21d34f, #07872c);
+  color: #fff;
+  font-size: 9px;
+  font-weight: 900;
+  white-space: nowrap;
+  text-shadow: 0 1px 2px rgba(0,0,0,.5);
+  box-shadow: 0 2px 0 rgba(0,0,0,.32), 0 0 12px rgba(47, 255, 94, .38);
+  pointer-events: none;
+}
+
+.rummy-hand-card {
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-drag: element;
+}
+
+.rummy-hand-card:active {
+  cursor: grabbing;
+}
+
+.rummy-hand-card.selected {
+  transform: translateY(-18px) scale(1.03);
+  filter: drop-shadow(0 0 13px rgba(255,235,85,.98));
+}
+
+.rummy-drag-ghost {
+  position: fixed;
+  width: 58px;
+  height: 78px;
+  transform: translate(-50%, -54%) rotate(-5deg) scale(1.08);
+  z-index: 9999;
+  pointer-events: none;
+  filter: drop-shadow(0 16px 24px rgba(0,0,0,.55));
+  opacity: .96;
+}
+
+.rummy-drag-ghost.over-drop {
+  transform: translate(-50%, -54%) rotate(0deg) scale(1.18);
+  filter: drop-shadow(0 0 20px rgba(255, 239, 90, .95));
+}
+
+.rummy-drag-ghost .rummy-hand-card {
+  width: 58px;
+  height: 78px;
+  margin: 0;
+}
+
+.drag-discard-coach {
+  min-width: 92px;
+  height: 29px;
+  padding: 0 11px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  border: 1px solid rgba(255,255,255,.22);
+  font-size: 11px;
+  font-weight: 900;
+  letter-spacing: .03em;
+  color: rgba(255,255,255,.88);
+  background: linear-gradient(180deg, rgba(43,217,84,.92), rgba(7,140,49,.9));
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.35), 0 2px 0 rgba(0,0,0,.30);
+  white-space: nowrap;
+}
+
+.drag-discard-coach.disabled {
+  opacity: .42;
+  filter: grayscale(.8);
+  background: linear-gradient(180deg, rgba(255,255,255,.20), rgba(255,255,255,.08));
+}
+
+.rummy-hand-actions .discard-action {
+  display: none !important;
+}
+
+@keyframes dropZonePulse {
+  from { opacity: .55; transform: scale(.96); }
+  to { opacity: 1; transform: scale(1.04); }
+}
+
+@media (max-height: 520px) and (orientation: landscape) {
+  .drop-card-hint {
+    bottom: -17px;
+    font-size: 8px;
+    padding: 1px 6px;
+  }
+
+  .drag-discard-coach {
+    height: 25px;
+    min-width: 72px;
+    padding: 0 7px;
+    font-size: 9px;
+  }
+
+  .rummy-drag-ghost,
+  .rummy-drag-ghost .rummy-hand-card {
+    width: 44px;
+    height: 60px;
+  }
+
+  .rummy-discard-drop-zone.drop-active::after {
+    inset: -8px;
+    border-radius: 12px;
+  }
+}
+
+/* Patch 24: Buttonless smart-hand UX for Indian Rummy table */
+.rummy-hand-actions-clean {
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  padding: 0 12px 4px;
+  height: 34px;
+}
+
+.rummy-hand-actions-clean .hand-title {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.smart-hand-strip {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+
+.smart-chip,
+.clear-selection-chip {
+  height: 25px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  padding: 0 10px;
+  font-size: 11px;
+  font-weight: 900;
+  letter-spacing: .02em;
+  color: #fff7bf;
+  border: 1px solid rgba(255, 230, 99, .42);
+  background: linear-gradient(180deg, rgba(64, 35, 101, .92), rgba(25, 14, 62, .92));
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.16), 0 2px 0 rgba(0,0,0,.28);
+}
+
+.smart-chip::before {
+  content: "✓";
+  width: 14px;
+  height: 14px;
+  margin-right: 5px;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: #08210c;
+  background: #28e65a;
+  font-size: 10px;
+  font-weight: 1000;
+}
+
+.clear-selection-chip {
+  color: #fff;
+  background: linear-gradient(180deg, rgba(217, 77, 148, .9), rgba(133, 39, 109, .9));
+  border-color: rgba(255,255,255,.22);
+  cursor: pointer;
+}
+
+.rummy-hand-actions-clean .drag-discard-coach {
+  height: 25px;
+  padding: 0 12px;
+  margin-left: 0;
+  font-size: 11px;
+}
+
+.rummy-card-group {
+  transition: transform .18s ease, filter .18s ease;
+}
+
+.rummy-card-group:hover {
+  transform: translateY(-2px);
+}
+
+.rummy-card-group .group-select {
+  cursor: default;
+}
+
+.rummy-hand-card {
+  touch-action: none;
+}
+
+.rummy-hand-card:active {
+  transform: translateY(-10px) scale(1.04);
+}
+
+.rummy-group-label.good {
+  background: linear-gradient(180deg, #20cc41, #078b1e);
+}
+
+.rummy-group-label.bad {
+  background: linear-gradient(180deg, #ff6b5b, #e32222);
+}
+
+@media (max-width: 900px), (max-height: 520px) {
+  .rummy-hand-actions-clean {
+    height: 29px;
+    padding: 0 8px 2px;
+    gap: 6px;
+  }
+
+  .rummy-hand-actions-clean .hand-title strong {
+    font-size: 12px;
+  }
+
+  .rummy-hand-actions-clean .hand-title span {
+    font-size: 9.5px;
+  }
+
+  .smart-hand-strip {
+    gap: 5px;
+  }
+
+  .smart-chip,
+  .clear-selection-chip,
+  .rummy-hand-actions-clean .drag-discard-coach {
+    height: 22px;
+    padding: 0 7px;
+    font-size: 9px;
+  }
+
+  .smart-chip::before {
+    width: 11px;
+    height: 11px;
+    font-size: 8px;
+    margin-right: 4px;
+  }
+}
+
+@media (max-width: 640px), (max-height: 430px) {
+  .smart-chip {
+    display: none;
+  }
+
+  .rummy-hand-actions-clean .drag-discard-coach {
+    padding: 0 9px;
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   Patch 25: Visible leftover cards + non-overlapping center text
+   ═══════════════════════════════════════════════════════════════ */
+.rummy-table-center {
+  z-index: 8;
+}
+
+.rummy-table-center .rummy-phase-label {
+  top: calc(100% + 22px);
+  z-index: 1;
+  pointer-events: none;
+  font-size: clamp(17px, 2vw, 22px);
+}
+
+.rummy-discard-drop-zone .drop-card-hint {
+  bottom: -13px;
+  z-index: 5;
+}
+
+.rummy-discard-drop-zone.drop-active .drop-card-hint {
+  transform: translateX(-50%) scale(1.06);
+}
+
+/* Keep all auto groups and leftover cards visible in the same tray. */
+.rummy-groups-row {
+  align-items: flex-end;
+  overflow-x: auto;
+  overflow-y: visible;
+  scroll-snap-type: x proximity;
+}
+
+.rummy-card-group {
+  scroll-snap-align: start;
+}
+
+.rummy-card-group.ungrouped-free {
+  min-width: max-content;
+  max-width: none;
+  padding-right: 26px;
+}
+
+.rummy-card-group.ungrouped-free .rummy-group-label {
+  min-width: 100%;
+}
+
+@media (max-width: 900px) {
+  .rummy-table-center .rummy-phase-label {
+    top: calc(100% + 18px);
+    font-size: 14px;
+  }
+
+  .rummy-discard-drop-zone .drop-card-hint {
+    bottom: -11px;
+    font-size: 8px;
+    padding: 1px 6px;
+  }
+
+  .rummy-card-group.ungrouped-free {
+    padding-right: 18px;
+  }
+}
+
+@media (max-height: 520px) and (orientation: landscape) {
+  .rummy-table-center {
+    top: 40%;
+  }
+
+  .rummy-table-center .rummy-phase-label {
+    top: calc(100% + 15px);
+    font-size: 12px;
+    text-shadow: 0 2px 4px rgba(0,0,0,.75);
+  }
+
+  .rummy-discard-drop-zone .drop-card-hint {
+    bottom: -9px;
+    font-size: 7px;
+    padding: 1px 5px;
+  }
+
+  .rummy-hand-dock-pro {
+    height: 98px;
+  }
+
+  .rummy-groups-row {
+    height: 94px;
+    gap: 10px;
+  }
+
+  .rummy-card-group.ungrouped-free {
+    padding-right: 16px;
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   Patch 26: Center the player's hand groups on mobile/desktop
+   - Keeps groups centered when they fit in the available width
+   - Falls back to normal horizontal scrolling when the hand is wider
+   ═══════════════════════════════════════════════════════════════ */
+.rummy-groups-row {
+  justify-content: flex-start;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.rummy-groups-row > .rummy-card-group:first-child {
+  margin-left: auto;
+}
+
+.rummy-groups-row > .rummy-card-group:last-child {
+  margin-right: auto;
+}
+
+/* When the hand becomes wider than the screen, auto margins collapse to 0
+   naturally, so the tray remains scrollable from the first card. */
+.rummy-card-group {
+  flex-shrink: 0;
+}
+
+@media (max-height: 520px) and (orientation: landscape) {
+  .rummy-groups-row {
+    padding-left: 10px;
+    padding-right: 10px;
+  }
+
+  .rummy-card-group.ungrouped-free {
+    padding-right: 10px;
+  }
+}
+
+@media (max-width: 700px) {
+  .rummy-groups-row {
+    padding-left: 8px;
+    padding-right: 8px;
   }
 }

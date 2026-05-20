@@ -1,5 +1,7 @@
 import { createSlice, createAsyncThunk } from '@reduxjs/toolkit';
 import api from '../../config/api';
+import { createClientActionId } from '../../utils/clientActionId';
+import { normalizeErrorMessage } from '../../utils/normalizeError';
 
 // Async thunks
 export const getBalance = createAsyncThunk(
@@ -10,7 +12,7 @@ export const getBalance = createAsyncThunk(
       console.log('Balance response:', response);
       return response.data.balance;
     } catch (error) {
-      return rejectWithValue(error.response?.data?.error || 'Failed to get balance');
+      return rejectWithValue(normalizeErrorMessage(error, 'Failed to get balance'));
     }
   }
 );
@@ -19,10 +21,12 @@ export const addChips = createAsyncThunk(
   'wallet/addChips',
   async (amount, { rejectWithValue }) => {
     try {
-      const response = await api.post('/api/wallet/add', { amount });
+      const response = await api.post('/api/wallet/add', { amount }, {
+        headers: { 'Idempotency-Key': createClientActionId('wallet_add') },
+      });
       return response.data.balance;
     } catch (error) {
-      return rejectWithValue(error.response?.data?.error || 'Failed to add chips');
+      return rejectWithValue(normalizeErrorMessage(error, 'Failed to add chips'));
     }
   }
 );
@@ -31,10 +35,12 @@ export const withdrawChips = createAsyncThunk(
   'wallet/withdrawChips',
   async (amount, { rejectWithValue }) => {
     try {
-      const response = await api.post('/api/wallet/withdraw', { amount });
+      const response = await api.post('/api/wallet/withdraw', { amount }, {
+        headers: { 'Idempotency-Key': createClientActionId('wallet_withdraw') },
+      });
       return response.data.balance;
     } catch (error) {
-      return rejectWithValue(error.response?.data?.error || 'Failed to withdraw chips');
+      return rejectWithValue(normalizeErrorMessage(error, 'Failed to withdraw chips'));
     }
   }
 );

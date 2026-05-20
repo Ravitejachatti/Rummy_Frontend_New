@@ -1,597 +1,404 @@
-// client/src/components/game/PlayerHand.jsx
-import React, { useEffect, useState, useRef } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { getCardImage } from "../utils/cardimages";
+import { classifyGroup } from "../utils/rummyRules";
 
-// ---------- Utils ----------
-const glyph = (s) =>
-  s === "Hearts" ? "♥" : s === "Diamonds" ? "♦" : s === "Clubs" ? "♣" : "♠";
+const SUIT_ORDER = { Spades: 0, Hearts: 1, Clubs: 2, Diamonds: 3, Joker: 4 };
+const RANK_ORDER = { A: 1, "2": 2, "3": 3, "4": 4, "5": 5, "6": 6, "7": 7, "8": 8, "9": 9, "10": 10, J: 11, Q: 12, K: 13, JOKER: 99 };
+const cardKey = (c) => c?.cardId || `${c?.rank}|${c?.suit}`;
+const isJoker = (c) => c?.rank === "JOKER" || c?.suit === "Joker";
 
-const suitColor = (s) =>
-  s === "Hearts" || s === "Diamonds" ? "text-red-600" : "text-gray-900";
-
-// Responsive card sizes - optimized for mobile landscape
-const SIZE_MAP = {
-  sm: { w: "w-11", h: "h-16", font: "text-sm" },
-  md: { w: "w-14", h: "h-20", font: "text-base" },
-  lg: { w: "w-16", h: "h-24", font: "text-lg" },
-};
-
-// Build a simple comparable key
-const cardKey = (c) => `${c?.rank}|${c?.suit}`;
-
-/**
- * Reconcile incoming "cards" with local groups
- */
-function reconcileHandWithGroups(cards, groups) {
-  const used = new Array(cards.length).fill(false);
-
-  const findAndUse = (cardLike) => {
-    const key = cardKey(cardLike);
-    for (let i = 0; i < cards.length; i++) {
-      if (!used[i] && cardKey(cards[i]) === key) {
-        used[i] = true;
-        return cards[i];
-      }
-    }
-    return null;
-  };
-
-  const newGroups = groups
-    .map((g) => {
-      const kept = [];
-      for (const it of g.items || []) {
-        const matched = findAndUse(it);
-        if (matched) kept.push(matched);
-      }
-      return kept.length > 0 ? { ...g, items: kept } : null;
-    })
-    .filter(Boolean);
-
-  const newUngrouped = [];
-  for (let i = 0; i < cards.length; i++) {
-    if (!used[i]) newUngrouped.push(cards[i]);
-  }
-
-  return { newGroups, newUngrouped };
+function primaryRankValue(card) {
+  if (!card) return 99;
+  if (card.rank === "A") return 1;
+  if (card.rank === "J") return 11;
+  if (card.rank === "Q") return 12;
+  if (card.rank === "K") return 13;
+  if (card.rank === "JOKER") return 99;
+  return Number(card.rank) || 99;
 }
 
-// ---------- PlayingCard ----------
-function PlayingCard({ card, size = "sm", selected = false, onClick }) {
-  if (!card) return null;
-  const sz = SIZE_MAP[size] || SIZE_MAP.sm;
-  const imgSrc = getCardImage(card);
+function sortCards(cards) {
+  return [...cards].sort((a, b) => {
+    const suitDiff = (SUIT_ORDER[a.suit] ?? 99) - (SUIT_ORDER[b.suit] ?? 99);
+    if (suitDiff) return suitDiff;
+    return (RANK_ORDER[a.rank] ?? 99) - (RANK_ORDER[b.rank] ?? 99);
+  });
+}
 
+function suitGlyph(suit) {
+  const map = { Hearts: "♥", Diamonds: "♦", Clubs: "♣", Spades: "♠", Joker: "★" };
+  return map[suit] || "";
+}
+
+function Card({ card, selected, onPointerDown, onPointerMove, onPointerUp, onNativeDragStart }) {
+  const img = getCardImage(card);
+  const red = card?.suit === "Hearts" || card?.suit === "Diamonds";
   return (
-    <div
-      onClick={onClick}
-      className={`relative bg-white rounded-lg shadow-md border transition-all duration-150 select-none cursor-pointer
-        ${sz.w} ${sz.h}
-        ${selected
-          ? "ring-2 ring-amber-400 border-amber-400 scale-105"
-          : "border-gray-200"
-        }
-        hover:-translate-y-1
-        flex items-center justify-center overflow-hidden`}
-    >
-      {imgSrc ? (
-        <img
-          src={imgSrc}
-          alt={`${card.rank} of ${card.suit}`}
-          className="w-full h-full object-contain"
-          width={200}
-          height={280}
-          loading="lazy"
-          draggable={false}
-        />
+    <button
+      type="button"
+      draggable
+      onDragStart={(event) => onNativeDragStart?.(event, card)}
+      onPointerDown={(event) => onPointerDown?.(event, card)}
+      onPointerMove={(event) => onPointerMove?.(event, card)}
+      onPointerUp={(event) => onPointerUp?.(event, card)}
+      onPointerCancel={(event) => onPointerUp?.(event, card)}
+      className={`rummy-hand-card ${selected ? "selected" : ""}`}>
+      {img ? (
+        <img src={img} alt={`${card.rank} of ${card.suit}`} draggable={false} />
       ) : (
-        // Fallback to old text style if image not found
-        <div className="p-0.5">
-          <div
-            className={`flex flex-col items-start justify-start leading-none ${sz.font
-              } font-bold ${suitColor(card.suit)}`}
-          >
-            <span>{card.rank}</span>
-            <span className="-mt-0.5">{glyph(card.suit)}</span>
-          </div>
-        </div>
+        <span className={`manual-card ${red ? "red" : "black"}`}>
+          <span>{card.rank}</span>
+          <strong>{suitGlyph(card.suit)}</strong>
+        </span>
       )}
-    </div>
+    </button>
   );
 }
 
-// ---------- PlayerHand ----------
-export default function PlayerHand({
-  cards = [],
-  isMyTurn = false,
-  onDiscard,
-  onGroupsChange,
-}) {
-  const [ungrouped, setUngrouped] = useState(cards);
-  const [groups, setGroups] = useState([]);
-  const [selected, setSelected] = useState(new Set());
-  const [selectedGroup, setSelectedGroup] = useState(null);
-  const containerRef = useRef(null);
 
-  // Notify parent when groups/ungrouped change
-  const lastSnapshotRef = useRef("");
-  useEffect(() => {
-    const snapshot = JSON.stringify({ groups, ungrouped });
-    if (lastSnapshotRef.current !== snapshot) {
-      onGroupsChange?.({ groups, ungrouped });
-      lastSnapshotRef.current = snapshot;
+function makeCandidate(type, items, score) {
+  return { type, items, keys: new Set(items.map(cardKey)), score };
+}
+
+function findPureSequenceCandidates(cards) {
+  const bySuit = new Map();
+  cards.filter((c) => !isJoker(c)).forEach((card) => {
+    const suit = card.suit || "";
+    if (!bySuit.has(suit)) bySuit.set(suit, []);
+    bySuit.get(suit).push(card);
+  });
+
+  const candidates = [];
+  bySuit.forEach((items) => {
+    const byRank = new Map();
+    items.forEach((card) => {
+      const value = primaryRankValue(card);
+      if (!byRank.has(value)) byRank.set(value, []);
+      byRank.get(value).push(card);
+      if (card.rank === "A") {
+        if (!byRank.has(14)) byRank.set(14, []);
+        byRank.get(14).push(card);
+      }
+    });
+
+    const values = [...byRank.keys()].sort((a, b) => a - b);
+    let run = [];
+
+    const flushRun = () => {
+      if (run.length < 3) return;
+      const cardsInRun = run.map((value) => byRank.get(value)?.[0]).filter(Boolean);
+      const unique = [];
+      const seen = new Set();
+      cardsInRun.forEach((card) => {
+        const key = cardKey(card);
+        if (!seen.has(key)) {
+          seen.add(key);
+          unique.push(card);
+        }
+      });
+      if (unique.length >= 3) {
+        candidates.push(makeCandidate("PURE_SEQUENCE", unique, 1000 + unique.length * 20));
+        for (let i = 0; i <= unique.length - 3; i += 1) {
+          const slice = unique.slice(i, i + 3);
+          candidates.push(makeCandidate("PURE_SEQUENCE", slice, 900 + slice.length * 20));
+        }
+      }
+    };
+
+    for (let i = 0; i < values.length; i += 1) {
+      if (!run.length || values[i] === run[run.length - 1] + 1) {
+        run.push(values[i]);
+      } else {
+        flushRun();
+        run = [values[i]];
+      }
     }
+    flushRun();
+  });
+
+  return candidates;
+}
+
+function findSetCandidates(cards) {
+  const byRank = new Map();
+  cards.filter((c) => !isJoker(c)).forEach((card) => {
+    if (!byRank.has(card.rank)) byRank.set(card.rank, []);
+    byRank.get(card.rank).push(card);
+  });
+
+  const candidates = [];
+  byRank.forEach((items) => {
+    const uniqueBySuit = [];
+    const suits = new Set();
+    sortCards(items).forEach((card) => {
+      if (!suits.has(card.suit)) {
+        suits.add(card.suit);
+        uniqueBySuit.push(card);
+      }
+    });
+    if (uniqueBySuit.length >= 3) {
+      candidates.push(makeCandidate("SET", uniqueBySuit.slice(0, 4), 700 + uniqueBySuit.length * 10));
+    }
+  });
+  return candidates;
+}
+
+function findImpureSequenceCandidates(cards) {
+  const jokers = cards.filter(isJoker);
+  if (!jokers.length) return [];
+
+  const bySuit = new Map();
+  cards.filter((c) => !isJoker(c)).forEach((card) => {
+    const suit = card.suit || "";
+    if (!bySuit.has(suit)) bySuit.set(suit, []);
+    bySuit.get(suit).push(card);
+  });
+
+  const candidates = [];
+  bySuit.forEach((items) => {
+    const sorted = sortCards(items);
+    for (let i = 0; i < sorted.length; i += 1) {
+      for (let j = i + 1; j < sorted.length; j += 1) {
+        const left = primaryRankValue(sorted[i]);
+        const right = primaryRankValue(sorted[j]);
+        const gap = Math.max(0, right - left - 1);
+        if (gap > 0 && gap <= jokers.length) {
+          const needed = jokers.slice(0, gap);
+          const candidate = [sorted[i], ...needed, sorted[j]];
+          if (candidate.length >= 3) {
+            candidates.push(makeCandidate("IMPURE_SEQUENCE", candidate, 650 + candidate.length * 10));
+          }
+        }
+      }
+    }
+  });
+
+  return candidates;
+}
+
+function autoArrangeCards(cards) {
+  const sortedCards = sortCards(cards || []);
+  const candidates = [
+    ...findPureSequenceCandidates(sortedCards),
+    ...findSetCandidates(sortedCards),
+    ...findImpureSequenceCandidates(sortedCards),
+  ].sort((a, b) => b.score - a.score);
+
+  const used = new Set();
+  const groups = [];
+
+  candidates.forEach((candidate) => {
+    const overlaps = [...candidate.keys].some((key) => used.has(key));
+    if (overlaps) return;
+
+    candidate.items.forEach((card) => used.add(cardKey(card)));
+    groups.push({
+      id: `auto-${candidate.type}-${groups.length}-${Date.now()}`,
+      auto: true,
+      type: candidate.type,
+      items: sortCards(candidate.items),
+    });
+  });
+
+  const ungrouped = sortedCards.filter((card) => !used.has(cardKey(card)));
+  return { groups, ungrouped };
+}
+
+function groupLabel(cards, fallback, groupIndex = 0) {
+  if (!cards || cards.length < 3) return fallback;
+  const label = classifyGroup(cards);
+  if (label === "Pure Sequence") return groupIndex === 0 ? "1st Life" : "2nd Life";
+  if (label === "Impure Sequence") return groupIndex <= 1 ? "Life Needed" : "Impure Run";
+  if (label === "Triplet") return "Set";
+  return "Life Needed";
+}
+
+export default function PlayerHand({ cards = [], isMyTurn = false, canDiscard = false, onDiscard, onGroupsChange }) {
+  const [groups, setGroups] = useState([]);
+  const [ungrouped, setUngrouped] = useState(cards);
+  const [selectedKeys, setSelectedKeys] = useState(new Set());
+  const dragStateRef = useRef(null);
+  const [dragGhost, setDragGhost] = useState(null);
+  const [isOverDropZone, setIsOverDropZone] = useState(false);
+
+  useEffect(() => {
+    const arranged = autoArrangeCards(cards);
+    setUngrouped(arranged.ungrouped);
+    setGroups(arranged.groups);
+    setSelectedKeys(new Set());
+  }, [cards]);
+
+  useEffect(() => {
+    onGroupsChange?.({ groups, ungrouped });
   }, [groups, ungrouped, onGroupsChange]);
 
-  // Reconcile on incoming hand changes
-  useEffect(() => {
-    const { newGroups, newUngrouped } = reconcileHandWithGroups(cards, groups);
-    setGroups(newGroups);
-    setUngrouped(newUngrouped);
-    setSelected(new Set());
-    setSelectedGroup(null);
-  }, [cards]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // ---------- Selection ----------
-  const toggleSelect = (index) => {
-    setSelected((prev) => {
-      const n = new Set(prev);
-      n.has(index) ? n.delete(index) : n.add(index);
-      return n;
+  const toggleCard = (card) => {
+    const key = cardKey(card);
+    setSelectedKeys((prev) => {
+      const next = new Set(prev);
+      next.has(key) ? next.delete(key) : next.add(key);
+      return next;
     });
-    setSelectedGroup(null);
   };
 
-  // ---------- Group ----------
-  const handleGroupSelected = () => {
-    if (selected.size === 0) return;
+  const removeCardLocally = (card) => {
+    const key = cardKey(card);
+    setUngrouped((prev) => prev.filter((c) => cardKey(c) !== key));
+    setGroups((prev) =>
+      prev
+        .map((g) => ({ ...g, items: (g.items || []).filter((c) => cardKey(c) !== key) }))
+        .filter((g) => g.items.length)
+    );
+    setSelectedKeys(new Set());
+  };
 
-    // selected card indices from ungrouped
-    const ids = Array.from(selected).sort((a, b) => a - b);
-    const chosen = ids.map((i) => ungrouped[i]);
+  const discardSpecificCard = (card) => {
+    if (!card || !canDiscard) return;
+    onDiscard?.(card);
+    removeCardLocally(card);
+  };
 
-    const remaining = [...ungrouped];
-    for (let i = ids.length - 1; i >= 0; i--) {
-      remaining.splice(ids[i], 1);
+  const handleNativeDragStart = (event, card) => {
+    if (!canDiscard || !card) {
+      event.preventDefault();
+      return;
     }
-
-    setUngrouped(remaining);
-    setGroups((g) => [
-      ...g,
-      { id: Date.now().toString(), items: chosen }, // just id + items
-    ]);
-    setSelected(new Set());
+    event.dataTransfer.effectAllowed = "move";
+    event.dataTransfer.setData("application/x-rummy-card", JSON.stringify(card));
+    event.dataTransfer.setData("text/plain", cardKey(card));
+    window.__rummyDraggedCard = card;
+    setSelectedKeys(new Set([cardKey(card)]));
   };
 
-  // ---------- Ungroup ----------
-  const handleUngroup = (groupId) => {
-    const group = groups.find((g) => g.id === groupId);
-    if (!group) return;
-    setUngrouped((prev) => [...prev, ...group.items]);
-    setGroups((prev) => prev.filter((g) => g.id !== groupId));
-    setSelectedGroup(null);
+  const isPointInsideDiscardZone = (x, y) => {
+    const el = document.elementFromPoint(x, y);
+    return Boolean(el?.closest?.(".rummy-discard-drop-zone"));
   };
 
-  // ---------- Discard ----------
-  const handleDiscard = () => {
-    if (!isMyTurn) return;
-
-    if (selected.size === 1) {
-      const idx = Array.from(selected)[0];
-      const card = ungrouped[idx];
-      if (!card) return;
-      onDiscard?.(card);
-      const next = [...ungrouped];
-      next.splice(idx, 1);
-      setUngrouped(next);
-      setSelected(new Set());
-    } else if (selectedGroup) {
-      const { gid, index } = selectedGroup;
-      const gIdx = groups.findIndex((g) => g.id === gid);
-      if (gIdx >= 0 && groups[gIdx].items[index]) {
-        const card = groups[gIdx].items[index];
-        onDiscard?.(card);
-        setGroups((prev) => {
-          const copy = prev.map((g) => ({ ...g, items: [...g.items] }));
-          copy[gIdx].items.splice(index, 1);
-          if (copy[gIdx].items.length === 0) copy.splice(gIdx, 1);
-          return copy;
-        });
-        setSelectedGroup(null);
-      }
-    }
-  };
-
-  // ---------- Enhanced Drag & Drop with Cross-Zone Support ----------
-  const dragState = useRef(null);
-  const animationFrameRef = useRef(null);
-
-  const getClientCoords = (e) => {
-    if (typeof e.clientX === "number") return { x: e.clientX, y: e.clientY };
-    if (e.touches && e.touches[0]) return { x: e.touches[0].clientX, y: e.touches[0].clientY };
-    return { x: 0, y: 0 };
-  };
-
-  const getZone = (zone) => {
-    if (zone === "ungrouped") return ungrouped;
-    const group = groups.find((g) => g.id === zone);
-    return group ? group.items : [];
-  };
-
-  const handlePointerDown = (e, zone, index) => {
-    e.preventDefault();
-    e.stopPropagation();
-
-    const { x, y } = getClientCoords(e);
-    const el = document.getElementById(`drag-${zone}-${index}`);
-
-    if (!el) return;
-
-    const rect = el.getBoundingClientRect();
-
-    dragState.current = {
-      zone,
-      index,
-      startX: x,
-      startY: y,
-      currentX: x,
-      currentY: y,
-      cardWidth: rect.width,
-      isDragging: false,
-      dragThreshold: 5,
+  const handlePointerDown = (event, card) => {
+    if (!card) return;
+    dragStateRef.current = {
+      card,
+      pointerId: event.pointerId,
+      startX: event.clientX,
+      startY: event.clientY,
+      moved: false,
     };
-
-    window.addEventListener("pointermove", handlePointerMove, { passive: false });
-    window.addEventListener("pointerup", handlePointerUp);
-    window.addEventListener("pointercancel", handlePointerUp);
+    event.currentTarget.setPointerCapture?.(event.pointerId);
   };
 
-  const updateCardPositions = () => {
-    if (!dragState.current || !dragState.current.isDragging) return;
+  const handlePointerMove = (event) => {
+    const drag = dragStateRef.current;
+    if (!drag || drag.pointerId !== event.pointerId) return;
 
-    const { zone, index, currentX, currentY, startX, startY } = dragState.current;
+    const dx = event.clientX - drag.startX;
+    const dy = event.clientY - drag.startY;
+    const moved = Math.hypot(dx, dy) > 8;
 
-    // Move the dragged card visibly
-    const draggedEl = document.getElementById(`drag-${zone}-${index}`);
-    if (draggedEl) {
-      const dx = currentX - startX;
-      const dy = currentY - startY;
+    if (!moved && !drag.moved) return;
 
-      draggedEl.style.position = "relative";
-      draggedEl.style.zIndex = "999";
-      draggedEl.style.transition = "none";
-      draggedEl.style.transform = `translate(${dx}px, ${dy}px) scale(1.08)`;
-      draggedEl.style.filter = "drop-shadow(0 10px 20px rgba(0,0,0,0.3))";
-    }
+    drag.moved = true;
+    const overDrop = isPointInsideDiscardZone(event.clientX, event.clientY);
+    setIsOverDropZone(overDrop);
+    setDragGhost({ card: drag.card, x: event.clientX, y: event.clientY });
+    setSelectedKeys(new Set([cardKey(drag.card)]));
   };
 
-  const handlePointerMove = (e) => {
-    if (!dragState.current) return;
+  const handlePointerUp = (event) => {
+    const drag = dragStateRef.current;
+    if (!drag || drag.pointerId !== event.pointerId) return;
 
-    const { x, y } = getClientCoords(e);
-    dragState.current.currentX = x;
-    dragState.current.currentY = y;
+    const wasDrag = drag.moved;
+    const shouldDiscard = wasDrag && isPointInsideDiscardZone(event.clientX, event.clientY);
 
-    if (!dragState.current.isDragging) {
-      const d = Math.sqrt(Math.pow(x - dragState.current.startX, 2) + Math.pow(y - dragState.current.startY, 2));
-      if (d > dragState.current.dragThreshold) {
-        dragState.current.isDragging = true;
-      } else {
-        return;
-      }
-    }
+    dragStateRef.current = null;
+    setDragGhost(null);
+    setIsOverDropZone(false);
 
-    if (animationFrameRef.current) cancelAnimationFrame(animationFrameRef.current);
-    animationFrameRef.current = requestAnimationFrame(updateCardPositions);
-
-    if (e.cancelable) e.preventDefault();
-  };
-
-  const handlePointerUp = (e) => {
-    if (animationFrameRef.current) {
-      cancelAnimationFrame(animationFrameRef.current);
-      animationFrameRef.current = null;
-    }
-
-    if (!dragState.current) {
-      cleanupDragListeners();
+    if (shouldDiscard) {
+      discardSpecificCard(drag.card);
       return;
     }
 
-    const { zone, index, isDragging, currentX, currentY } = dragState.current;
-
-    // Click handling
-    if (!isDragging) {
-      resetAllStyles(zone);
-      dragState.current = null;
-      cleanupDragListeners();
-      return;
-    }
-
-    // --- HIT TESTING (Cross-Zone) ---
-    // 1. Check if dropped on a specific group zone
-    let targetZoneId = null;
-
-    // Check groups first
-    for (const g of groups) {
-      const zoneEl = document.getElementById(`zone-${g.id}`);
-      if (zoneEl) {
-        const rect = zoneEl.getBoundingClientRect();
-        if (currentX >= rect.left && currentX <= rect.right && currentY >= rect.top && currentY <= rect.bottom) {
-          targetZoneId = g.id;
-          break;
-        }
-      }
-    }
-
-    // Check ungrouped zone if not found in groups
-    if (!targetZoneId) {
-      const ungroupedEl = document.getElementById("zone-ungrouped");
-      if (ungroupedEl) {
-        const rect = ungroupedEl.getBoundingClientRect();
-        // Give the ungrouped zone a bit more vertical leniency for easy drops
-        if (currentX >= rect.left && currentX <= rect.right && currentY >= (rect.top - 50) && currentY <= (rect.bottom + 50)) {
-          targetZoneId = "ungrouped";
-        }
-      }
-    }
-
-    // If we have a valid target zone
-    if (targetZoneId) {
-      // Logic for Same-Zone Reorder vs Cross-Zone Move
-      if (targetZoneId === zone) {
-        // --- Reorder Logic (Simplistic: based on proximity to other cards in zone) ---
-        // For simplicity reusing the original "displacement" logic or just finding closest index
-        // Since we didn't track "currentTargetIndex" during move to keep it light, let's calc it now
-
-        const zoneItems = getZone(zone);
-        let dropIndex = zoneItems.length - 1;
-
-        // Find insertion index based on X position
-        // We iterate through cards in this zone to see where we fit
-        let found = false;
-        for (let i = 0; i < zoneItems.length; i++) {
-          const cardEl = document.getElementById(`drag-${zone}-${i}`);
-          if (cardEl && i !== index) {
-            const cr = cardEl.getBoundingClientRect();
-            if (currentX < cr.left + cr.width / 2) {
-              dropIndex = i > index ? i - 1 : i;
-              found = true;
-              break;
-            }
-          }
-        }
-        if (!found) dropIndex = zoneItems.length - 1;
-
-        if (dropIndex !== index && dropIndex >= 0) {
-          moveCardInternal(zone, index, zone, dropIndex);
-        }
-
-      } else {
-        // --- Cross-Zone Move Logic ---
-        // Append to end of target zone for simplicity
-        const targetItems = getZone(targetZoneId);
-        moveCardInternal(zone, index, targetZoneId, targetItems.length);
-      }
-    }
-
-    resetAllStyles(zone);
-    dragState.current = null;
-    cleanupDragListeners();
-  };
-
-  const moveCardInternal = (fromZone, fromIndex, toZone, toIndex) => {
-    // If same zone
-    if (fromZone === toZone) {
-      if (fromZone === "ungrouped") {
-        setUngrouped(prev => {
-          const arr = [...prev];
-          const [item] = arr.splice(fromIndex, 1);
-          arr.splice(toIndex, 0, item);
-          return arr;
-        });
-      } else {
-        setGroups(prev => prev.map(g => {
-          if (g.id === fromZone) {
-            const arr = [...g.items];
-            const [item] = arr.splice(fromIndex, 1);
-            arr.splice(toIndex, 0, item);
-            return { ...g, items: arr };
-          }
-          return g;
-        }));
-      }
-      return;
-    }
-
-    // Cross zone
-    let sourceArr, destArr;
-
-    // 1. Get Source Array & Item
-    if (fromZone === "ungrouped") sourceArr = [...ungrouped];
-    else sourceArr = [...groups.find(g => g.id === fromZone).items];
-
-    // Safety check
-    if (!sourceArr[fromIndex]) return;
-
-    const [movedItem] = sourceArr.splice(fromIndex, 1);
-
-    // 2. Get Dest Array
-    if (toZone === "ungrouped") destArr = [...ungrouped];
-    else destArr = [...groups.find(g => g.id === toZone).items];
-
-    destArr.splice(toIndex, 0, movedItem);
-
-    // 3. Apply updates
-    const newUngrouped = fromZone === "ungrouped" ? sourceArr : (toZone === "ungrouped" ? destArr : ungrouped);
-
-    const newGroups = groups.map(g => {
-      if (g.id === fromZone) return { ...g, items: sourceArr };
-      if (g.id === toZone) return { ...g, items: destArr };
-      return g;
-    });
-
-    setUngrouped(newUngrouped);
-
-    // Auto-delete empty groups? For now let's keep them so user can drag back if they want.
-    // If we want to delete empty groups:
-    // setGroups(newGroups.filter(g => g.items.length > 0));
-    setGroups(newGroups);
-  };
-
-
-  const resetAllStyles = (zone) => {
-    // Simply reset the dragged element
-    // We don't track all moved elements in this lighter implementation
-    const { index } = dragState.current;
-    const el = document.getElementById(`drag-${zone}-${index}`);
-    if (el) {
-      el.style.transition = "transform 0.2s cubic-bezier(0.4, 0, 0.2, 1)";
-      el.style.transform = "";
-      el.style.zIndex = "";
-      el.style.position = "";
-      el.style.filter = "";
-      setTimeout(() => { if (el) el.style.transition = ""; }, 200);
+    if (!wasDrag) {
+      toggleCard(drag.card);
     }
   };
 
-  const cleanupDragListeners = () => {
-    window.removeEventListener("pointermove", handlePointerMove);
-    window.removeEventListener("pointerup", handlePointerUp);
-    window.removeEventListener("pointercancel", handlePointerUp);
-  };
+  const totalCards = ungrouped.length + groups.reduce((n, g) => n + (g.items?.length || 0), 0);
 
-  useEffect(() => {
-    return () => {
-      if (animationFrameRef.current) cancelAnimationFrame(animationFrameRef.current);
-      cleanupDragListeners();
-    };
-  }, []);
-
-  const totalCards =
-    ungrouped.length + groups.reduce((a, g) => a + g.items.length, 0);
+  // Always render both auto-detected groups AND the remaining cards.
+  // Earlier versions hid ungrouped cards whenever at least one life/set was found,
+  // which made most of the hand disappear after auto grouping.
+  const displayGroups = [
+    ...groups,
+    ...(ungrouped.length
+      ? [{ id: "ungrouped", items: ungrouped, virtual: true }]
+      : []),
+  ];
 
   return (
-    <div className="w-full h-full flex flex-col justify-end px-1 py-1 select-none">
-      {/* Top Controls */}
-      <div className="flex items-center justify-between mb-0.5 text-[10px] sm:text-xs text-white/80">
-        <div className="flex items-center gap-1">
-          <span className="font-medium">{totalCards}</span>
-          {selected.size > 0 && (
-            <>
-              <span className="text-white/50">•</span>
-              <span className="text-amber-400">{selected.size} selected</span>
-            </>
-          )}
+    <div className="rummy-hand-shell">
+      <div className="rummy-score-box">Points : <strong>0</strong></div>
+
+      <div className="rummy-hand-actions rummy-hand-actions-clean">
+        <div className="hand-title">
+          <strong>My Cards</strong>
+          <span>{totalCards} cards • auto-arranged • drag a card to the open pile</span>
         </div>
-        <div className="flex gap-1">
-          <button
-            onClick={handleGroupSelected}
-            disabled={selected.size === 0}
-            className="bg-amber-500 text-black font-semibold px-2 py-0.5 rounded-full text-[10px] disabled:opacity-40 hover:bg-amber-400 active:scale-95"
-          >
-            Group ({selected.size})
-          </button>
-          <button
-            onClick={handleDiscard}
-            disabled={
-              !isMyTurn ||
-              !(
-                selected.size === 1 ||
-                (selectedGroup && selectedGroup.index != null)
-              )
-            }
-            className="bg-blue-500 text-white font-semibold px-2 py-0.5 rounded-full text-[10px] disabled:opacity-40 hover:bg-blue-400 active:scale-95"
-          >
-            Discard
-          </button>
+        <div className="smart-hand-strip" aria-label="Smart grouping status">
+          <span className="smart-chip">Auto Grouped</span>
+          <span className={`drag-discard-coach ${canDiscard ? "active" : "disabled"}`}>Drag to Drop</span>
+          {selectedKeys.size > 0 && (
+            <button
+              type="button"
+              className="clear-selection-chip"
+              onClick={() => setSelectedKeys(new Set())}
+            >
+              Clear
+            </button>
+          )}
         </div>
       </div>
 
-      {/* Cards Container */}
-      <div
-        ref={containerRef}
-        className="flex justify-center items-end gap-4 overflow-x-auto pb-1 scrollbar-thin scrollbar-thumb-white/20 scrollbar-track-transparent"
-      >
-        {/* Groups */}
-        {groups.map((g) => (
-          <div
-            key={g.id}
-            id={`zone-${g.id}`}
-            className="flex flex-col items-center flex-shrink-0 relative rounded-lg bg-white/5 p-1 border border-white/5 min-w-[3rem] min-h-[5rem] transition-colors hover:bg-white/10"
-          >
-            <div className="relative flex items-end gap-0.5">
-              {g.items.map((card, i) => (
-                <div
-                  key={`group-${g.id}-${i}`}
-                  id={`drag-${g.id}-${i}`}
-                  onPointerDown={(e) => handlePointerDown(e, g.id, i)}
-                  className="cursor-grab active:cursor-grabbing"
-                  style={{ touchAction: "none" }}
-                >
-                  <PlayingCard
-                    card={card}
-                    size="sm"
-                    selected={
-                      selectedGroup &&
-                      selectedGroup.gid === g.id &&
-                      selectedGroup.index === i
-                    }
-                    onClick={() => {
-                      setSelected(new Set());
-                      setSelectedGroup(
-                        selectedGroup &&
-                          selectedGroup.gid === g.id &&
-                          selectedGroup.index === i
-                          ? null
-                          : { gid: g.id, index: i }
-                      );
-                    }}
-                  />
-                </div>
-              ))}
-            </div>
-
-            <div className="flex items-center justify-center mt-0.5">
+      <div className="rummy-groups-row">
+        {displayGroups.map((group, groupIndex) => {
+          const label = group.virtual ? "Ungrouped" : groupLabel(group.items, `${groupIndex + 1} Group`, groupIndex);
+          const isGood = label === "1st Life" || label === "2nd Life" || label === "Impure Run" || label === "Set";
+          return (
+            <div key={group.id} className={`rummy-card-group ${group.virtual ? "ungrouped-free" : ""}`}>
               <button
-                onClick={() => handleUngroup(g.id)}
-                className="text-[9px] text-white bg-red-600 rounded-md font-semibold px-1.5 py-[1px] hover:bg-red-500 active:scale-95"
+                type="button"
+                className="group-select"
               >
-                Ungroup
+                {group.items.map((card) => (
+                  <Card
+                    key={cardKey(card)}
+                    card={card}
+                    selected={selectedKeys.has(cardKey(card))}
+                    onNativeDragStart={handleNativeDragStart}
+                    onPointerDown={handlePointerDown}
+                    onPointerMove={handlePointerMove}
+                    onPointerUp={handlePointerUp}
+                  />
+                ))}
               </button>
+              <div className={`rummy-group-label ${isGood ? "good" : "bad"}`}>{label}</div>
             </div>
-          </div>
-        ))}
-
-        {/* Ungrouped */}
-        <div
-          id="zone-ungrouped"
-          className="flex flex-col items-center flex-shrink-0 rounded-lg p-1 border border-transparent min-w-[3rem] min-h-[5rem] transition-colors hover:bg-white/5"
-        >
-          <div className="relative flex items-end gap-0.5">
-            {ungrouped.map((card, i) => (
-              <div
-                key={`ungrouped-${i}`}
-                id={`drag-ungrouped-${i}`}
-                onPointerDown={(e) => handlePointerDown(e, "ungrouped", i)}
-                className="cursor-grab active:cursor-grabbing"
-                style={{ touchAction: "none" }}
-              >
-                <PlayingCard
-                  card={card}
-                  size="sm"
-                  selected={selected.has(i)}
-                  onClick={() => toggleSelect(i)}
-                />
-              </div>
-            ))}
-          </div>
-          {ungrouped.length > 0 && (
-            <div className="text-[9px] text-white bg-gray-700 rounded-b-md font-semibold mt-0.5 px-1.5 py-[1px]">
-              Ungrouped
-            </div>
-          )}
-        </div>
+          );
+        })}
       </div>
+
+      {dragGhost && (
+        <div
+          className={`rummy-drag-ghost ${isOverDropZone ? "over-drop" : ""}`}
+          style={{ left: dragGhost.x, top: dragGhost.y }}
+          aria-hidden="true"
+        >
+          <Card card={dragGhost.card} selected={false} />
+        </div>
+      )}
     </div>
   );
 }

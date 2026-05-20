@@ -1,9 +1,11 @@
 // src/core/socket/SocketManager.jsx
 import { useEffect, useRef } from "react";
-import { useSelector } from "react-redux";
+import { useDispatch, useSelector } from "react-redux";
 import socketService from "../config/socket";
+import { localLogout } from "../store/slices/authSlice";
 
 export default function SocketManager() {
+  const dispatch = useDispatch();
   const { isAuthenticated, accessToken, bootstrapped } = useSelector((s) => s.auth);
 
   const prevAuth = useRef(isAuthenticated);
@@ -22,6 +24,17 @@ export default function SocketManager() {
 
     prevAuth.current = isAuthenticated;
   }, [bootstrapped, isAuthenticated, accessToken]);
+
+  useEffect(() => {
+    const onAuthLogout = (event) => {
+      const message = event?.detail?.message;
+      if (message) window.alert(message);
+      socketService.disconnect();
+      dispatch(localLogout());
+    };
+    window.addEventListener("auth:logout", onAuthLogout);
+    return () => window.removeEventListener("auth:logout", onAuthLogout);
+  }, [dispatch]);
 
   return null;
 }

@@ -21,6 +21,7 @@ const TableList = () => {
     minPlayers: 2,
     maxPlayers: 6,
     chipValue: 10,
+    gameType: 'POINTS_RUMMY',
   });
 
   useEffect(() => {
@@ -30,7 +31,17 @@ const TableList = () => {
 
   const handleCreateTable = (e) => {
     e.preventDefault();
-    dispatch(createTable(newTable)).then((result) => {
+    const payload = {
+      ...newTable,
+      name: newTable.name.trim(),
+      bankRange: Number(newTable.bankRange),
+      minPlayers: Number(newTable.minPlayers),
+      maxPlayers: Number(newTable.maxPlayers),
+      chipValue: Number(newTable.chipValue),
+      gameType: newTable.gameType || 'POINTS_RUMMY',
+    };
+    if (!payload.name || payload.minPlayers > payload.maxPlayers) return;
+    dispatch(createTable(payload)).then((result) => {
       if (createTable.fulfilled.match(result)) {
         setShowCreateModal(false);
         setNewTable({
@@ -39,6 +50,7 @@ const TableList = () => {
           minPlayers: 2,
           maxPlayers: 6,
           chipValue: 10,
+          gameType: 'POINTS_RUMMY',
         });
         dispatch(fetchTables());
       }
