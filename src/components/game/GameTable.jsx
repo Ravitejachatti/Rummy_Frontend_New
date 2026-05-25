@@ -40,7 +40,7 @@ import TableCenter from "./TableCenter";
 import GameHUD from "./GameHUD";
 import LoadingSpinner from "../common/LoadingSpinner";
 import ErrorMessage from "../common/ErrorMessage";
-import { preloadAllCards } from "../utils/cardimages";
+import { preloadAllCards, getCardImage } from "../utils/cardimages";
 import SeatCutOverlay from "./SeatCutOverlay";
 import ShowReviewModal from "./ShowReviewModal";
 import SecurityOverlay from "./SecurityOverlay";
@@ -112,6 +112,10 @@ const GameTable = () => {
   const [isPortrait, setIsPortrait] = useState(false);
   const [rotateHint, setRotateHint] = useState("");
 
+  const [lastDrawSource, setLastDrawSource] = useState(null);
+  const [drawingAnimation, setDrawingAnimation] = useState(null);
+  const prevMyCardsRef = useRef([]);
+
   const { play, toggleMute, isMuted } = useSound();
 
 
@@ -119,6 +123,60 @@ const GameTable = () => {
   useEffect(() => {
     preloadAllCards();
   }, []);
+
+  // ── Card pick flying animation coordination ──
+  useEffect(() => {
+    const prevCards = prevMyCardsRef.current;
+    prevMyCardsRef.current = myCards;
+
+    // Detect if a card was added to our hand
+    if (myCards.length === prevCards.length + 1) {
+      const prevKeys = new Set(prevCards.map(c => c.cardId || `${c.rank}|${c.suit}`));
+      const newCard = myCards.find(c => !prevKeys.has(c.cardId || `${c.rank}|${c.suit}`));
+
+      if (newCard && lastDrawSource) {
+        // Locate source and target elements
+        const sourceSelector = lastDrawSource === "discard" ? ".rummy-discard-drop-zone" : ".rummy-deck-zone";
+        const sourceEl = document.querySelector(sourceSelector);
+        
+        // Target the newly rendered (but hidden) hand card element if possible, otherwise fallback to the groups row center
+        const targetEl = document.querySelector(".rummy-hand-card-hidden") || document.querySelector(".rummy-groups-row");
+
+        if (sourceEl && targetEl) {
+          const sourceRect = sourceEl.getBoundingClientRect();
+          const targetRect = targetEl.getBoundingClientRect();
+
+          // Flight path: from source center to target center
+          const startX = sourceRect.left + sourceRect.width / 2;
+          const startY = sourceRect.top + sourceRect.height / 2;
+          const endX = targetRect.left + targetRect.width / 2;
+          const endY = targetRect.top + targetRect.height / 2;
+
+          setDrawingAnimation({
+            card: newCard,
+            startX,
+            startY,
+            endX,
+            endY,
+            width: sourceRect.width || 60,
+            height: sourceRect.height || 80
+          });
+
+          // End animation after CSS transition finishes
+          setTimeout(() => {
+            setDrawingAnimation(null);
+            setLastDrawSource(null);
+          }, 600);
+        } else {
+          console.warn("[Rummy Animation] Source or target element not found in DOM:", { sourceEl, targetEl });
+          setLastDrawSource(null);
+        }
+      }
+    } else if (myCards.length < prevCards.length) {
+      // Clear last draw source only when card count decreases (e.g. discard)
+      setLastDrawSource(null);
+    }
+  }, [myCards, lastDrawSource]);
 
   // ── Orientation lock ──
   const requestLandscape = async () => {
@@ -345,6 +403,7 @@ const GameTable = () => {
     const normalized = String(source).toLowerCase() === "discard" ? "discard" : "draw";
     if (normalized === "discard" && !canDrawFromDiscard) return;
     if (normalized === "draw" && !canDrawFromDeck) return;
+    setLastDrawSource(normalized);
     drawCard(currentGame.gameId, meId, normalized, stateVersion);
   };
 
@@ -500,6 +559,7 @@ const GameTable = () => {
               }}
               onDiscard={(card) => handleDiscardCard(card)}
               onGroupsChange={handleGroupsChange}
+              animatingCardId={drawingAnimation?.card ? (drawingAnimation.card.cardId || `${drawingAnimation.card.rank}|${drawingAnimation.card.suit}`) : null}
             />
           </section>
         </div>
@@ -604,6 +664,37 @@ const GameTable = () => {
         onClose={(id) => dispatch(removeNotification(id))}
         position="top-right"
       />
+
+      {drawingAnimation && (
+        <div
+          className="rummy-drawing-card-anim"
+          style={{
+            "--start-x": `${drawingAnimation.startX}px`,
+            "--start-y": `${drawingAnimation.startY}px`,
+            "--end-x": `${drawingAnimation.endX}px`,
+            "--end-y": `${drawingAnimation.endY}px`,
+            "--width": `${drawingAnimation.width}px`,
+            "--height": `${drawingAnimation.height}px`,
+            width: `${drawingAnimation.width}px`,
+            height: `${drawingAnimation.height}px`,
+          }}
+        >
+          <div className="rummy-anim-card-inner">
+            {getCardImage(drawingAnimation.card) ? (
+              <img
+                src={getCardImage(drawingAnimation.card)}
+                alt="flying card"
+                draggable={false}
+              />
+            ) : (
+              <div className={`manual-card ${drawingAnimation.card.suit === "Hearts" || drawingAnimation.card.suit === "Diamonds" ? "red" : "black"}`}>
+                <span>{drawingAnimation.card.rank}</span>
+                <strong>{drawingAnimation.card.suit === "Hearts" ? "♥" : drawingAnimation.card.suit === "Diamonds" ? "♦" : drawingAnimation.card.suit === "Clubs" ? "♣" : drawingAnimation.card.suit === "Spades" ? "♠" : "★"}</strong>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 };
